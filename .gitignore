@@ -1,0 +1,18 @@
+# Raw HETUS microdata and the appliance mapping table are Eurostat
+# Scientific Use Files under restricted access - never commit them.
+data/raw/*.csv
+data/raw/HETUS_mapped_data.csv
+
+# Pipeline outputs (regenerate with run_pipeline.sh rather than committing
+# them). Locations are set in pipeline/paths.py.
+processed/
+Figures/
+
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# OS/editor cruft
+.DS_Store
+*.swp

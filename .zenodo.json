@@ -1,0 +1,22 @@
+{
+  "title": "HETUS household electricity profiling pipeline",
+  "upload_type": "software",
+  "description": "<p>Python pipeline that derives household electricity demand profiles at 10-minute resolution from the 2010 wave of the Harmonised European Time Use Surveys (HETUS) for 15 countries, clusters them globally, by day type, by country and by country and day type, and validates the clusters statistically. It accompanies the article \"Deriving Household Electricity Profiles from European Time-Use Surveys: A Multi-Level Clustering Approach Linking Appliance Use, Activity Patterns, and Sociodemographic Drivers\".</p><p>The outputs folder holds the aggregate results behind the article's tables and figures, under Eurostat's publication rules for HETUS. The HETUS microdata are Eurostat scientific use files under restricted access and are not included.</p><p>The results are based on data from Eurostat, Harmonised European Time Use Surveys (HETUS), 2010 wave, scientific use files, release of November 2020. The responsibility for all conclusions drawn from the data lies entirely with the author.</p>",
+  "creators": [
+    {
+      "name": "Lo Piano, Samuele",
+      "affiliation": "Gdansk University of Technology; Barcelona School of Management, Universitat Pompeu Fabra",
+      "orcid": "0000-0002-2625-483X"
+    }
+  ],
+  "keywords": [
+    "household energy profiles",
+    "time-use surveys",
+    "HETUS",
+    "clustering",
+    "demand-side management"
+  ],
+  "license": "MIT",
+  "access_right": "open",
+  "notes": "The code is released under the MIT License. The aggregate results in outputs/ and the documentation in docs/ are released under the Creative Commons Attribution 4.0 International License (LICENSES/CC-BY-4.0.txt)."
+}

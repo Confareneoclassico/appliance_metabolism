@@ -1,0 +1,33 @@
+cff-version: 1.2.0
+message: >-
+  If you use this software or its aggregate results, please cite it as below,
+  together with the accompanying article.
+type: software
+title: HETUS household electricity profiling pipeline
+abstract: >-
+  Python pipeline that derives household electricity demand profiles at
+  10-minute resolution from the 2010 wave of the Harmonised European Time Use
+  Surveys (HETUS) for 15 countries, clusters them globally, by day type, by
+  country and by country and day type, and validates the clusters
+  statistically. The outputs folder holds the aggregate results behind the
+  accompanying article, under Eurostat's publication rules for HETUS. The
+  HETUS microdata are Eurostat scientific use files and are not included.
+authors:
+  - family-names: Lo Piano
+    given-names: Samuele
+    orcid: https://orcid.org/0000-0002-2625-483X
+    affiliation: >-
+      Gdansk University of Technology; Barcelona School of Management,
+      Universitat Pompeu Fabra
+version: 1.0.0
+date-released: 2026-10-15
+repository-code: https://github.com/Confareneoclassico/appliance_metabolism
+license:
+  - MIT
+  - CC-BY-4.0
+keywords:
+  - household energy profiles
+  - time-use surveys
+  - HETUS
+  - clustering
+  - demand-side management
