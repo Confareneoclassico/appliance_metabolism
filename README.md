@@ -1,5 +1,7 @@
 # HETUS household electricity profiling pipeline
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23412742.svg)](https://doi.org/10.5281/zenodo.23412742)
+
 Reproducible pipeline that derives household electricity demand profiles at
 10-minute resolution from the Harmonised European Time-Use Survey (HETUS),
 clusters them globally, by day type, by country and by country and day type,
@@ -134,7 +136,8 @@ remain subject to Eurostat's conditions of access.
 
 If you use this pipeline, please cite the accompanying manuscript (full
 citation to be added on publication), the archived version of this
-repository on Zenodo, and the HETUS data source: Eurostat,
+repository on Zenodo (version 1.0.0, https://doi.org/10.5281/zenodo.23412742),
+and the HETUS data source: Eurostat,
 Harmonised European Time Use Surveys (HETUS), 2010 wave, scientific use files,
 release of November 2020.
 
