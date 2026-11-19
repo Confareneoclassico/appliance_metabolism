@@ -59,6 +59,14 @@ non-response above 50%, and flagged for non-response above 20%.
 the thresholds, which should not be lowered for files that are shared or
 published.
 
+To share the results of a run, `python3 tools/collect_exports.py --log
+run_log.txt` copies the aggregate exports and the main figures into
+`exports_for_sharing/`, after testing every table with the publication rules,
+and never copies a working file (for instance `clustering_results.csv`, one
+row per household-day). Its `manifest.txt` lists what was copied, refused or
+missing, and `log_extract.txt` keeps the lines of the saved console log with
+solution-level figures only (PCA, WCSS, the choice of K).
+
 Every stage takes its file locations from `pipeline/paths.py`, which resolves
 them from the repository root, so a stage can be run from any directory
 (`python pipeline/05_clustering_analysis_global.py` works as well as running
@@ -105,6 +113,7 @@ internals are unchanged except for the corrections listed in
 │   ├── 11_visualize_cluster_drivers.py
 │   └── plot_country_cluster_profiles.py  (country cluster figure, from aggregates only)
 ├── tests/                     Tests on synthetic data (python -m pytest tests)
+├── tools/collect_exports.py   Copies the exports that may be shared
 ├── archive/
 │   ├── clustering_analysis_v1_2025-11-26_SUPERSEDED_BY_05.py
 │   └── statistical_validation_v1_UNPATCHED_no_cramers_v_SUPERSEDED_BY_07.py

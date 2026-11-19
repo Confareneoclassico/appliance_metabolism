@@ -462,6 +462,7 @@ comes next, and Section 5 will then give the corrected numbers.
 | L12 | Stage 01, this section | `SOCIO_LABELS` corrected (`DDV1` day of the week, `DDV3` month, `DDV6` worked or studied); the quarter recoding and the at-home filter documented below | None | none needed |
 | L13 | `peaks.py`, Stage 08 | Clock times rounded to the minute and reduced modulo 24 h | At most one minute | `test_peaks.py` |
 | L14 | Stages 09, 10 | Diarists counted as distinct persons (`HID`, `PID`) per household-day | Console totals of Stage 10, `diarists_per_household_summary.csv` now per household-day | `test_stage09_sharing.py` |
+| (export) | Stage 09 | `shared_activities_frequency.csv` gives the household-days in which each code is shared, and pools as "other" the codes shared in fewer than 50 household-days | Codes of rare shared activities no longer listed one by one | `test_stage09_sharing.py` |
 | L15 | Stage 06 | A day type without published results is titled by its size class and left out of the count of countries | Figure titles, console | end-to-end run |
 | L16 | Stage 11 | Variables from the Stage 07 ranking (the six largest V of the global solution, `HETUS_DRIVER_TOP_N`) | Choice of driver figures | `test_figures_and_drivers.py` |
 | L17 | Stage 03 | The "deduplication impact" printout and its 61.5% are removed | Console | none needed |
@@ -501,6 +502,13 @@ among those at home at least once.
 
 The matching of household members to the same diary day (`HID` and `DIARY`,
 open risk of the audit and check C1) is not changed by this version.
+
+`tools/collect_exports.py` gathers the files of a run that may leave the
+machine holding the microdata: the aggregate exports, each tested again with
+the rules of `disclosure.py` (size columns and, for mean profiles,
+`check_export`), the main figures, and the solution-level lines of a saved
+console log. It never copies a working file, and its manifest lists what was
+copied, refused or missing (`test_collect_exports.py`).
 
 ## 4. Design choices that constrain interpretation
 

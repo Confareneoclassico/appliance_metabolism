@@ -28,7 +28,9 @@ names, and a missing raw file stops Stage 01 (`HETUS_COUNTRIES` selects a
 subset). Relative `HETUS_*` locations are taken from the repository root. The
 smaller corrections are in Section 3.15. The outputs in `outputs/` are still
 those of the run of 14 October 2026 and will be replaced by those of the
-corrected pipeline.
+corrected pipeline. `tools/collect_exports.py` copies the exports of a run that
+may be shared, tested again with the publication rules, and Stage 09 pools the
+codes shared in fewer than 50 household-days.
 
 ## 1.0.1 (19 November 2026)
 
