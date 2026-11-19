@@ -1,343 +1,217 @@
-import pandas as pd
+"""Stage 09: how often the members of a household share an activity at home.
+
+The statistic shows how often the shared-appliance rule of Stage 03 is
+exercised. For every household-day with two or more diarists, a slot is
+comparable when at least two diarists are at home (Wherep = 1) with a valid
+activity code, and shared when at least two of those diarists record the same
+code, as main or secondary activity. Each diarist counts once per code, so a
+code recorded by one diarist as both main and secondary activity is not a
+second diarist. The share of a household-day is its shared slots over its
+comparable slots.
+
+Versions up to 1.0.1 counted all 144 slots in the denominator, whether or not
+two diarists had a valid code in them, never read the location, so members at
+their own workplaces with the same work code shared an activity, and counted a
+code recorded as both main and secondary activity twice (audit of November
+2026, D3). The figures quoted in the manuscript came from a vectorised version
+that was not in the repository.
+
+Outputs (working files, not to be shared: one row per household-day):
+    same_activity_household_summary.csv
+Aggregate outputs:
+    shared_activities_frequency.csv   shared (slot, code) pairs by activity code
+    activity_combination_counts.csv   main for every diarist, secondary for
+                                      every diarist, or mixed
+    same_activity_by_diarists.csv     mean and median share by number of
+                                      diarists, under the publication rules
+"""
 import numpy as np
+import pandas as pd
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import seaborn as sns
-from collections import defaultdict
-import os
+
 from paths import PROCESSED_DIR, FIGURES_DIR
+from disclosure import size_class, round_size, MIN_N_PUBLISH, MIN_N_UNFLAGGED
 
-# ============================================================================
-# FIX (applied during pipeline consolidation): the original version of this
-# script treated -99 (and other HETUS missing/non-response codes) as an
-# ordinary activity value. Two diarists who both had no recorded activity
-# at the same interval were therefore counted as "sharing an activity",
-# which inflates every reported coincidence percentage by an unknown
-# amount. MISSING_CODES below are excluded from the activity sets before
-# any intersection is computed, consistent with the -99-exclusion
-# convention used in 07_statistical_validation.py.
-# ============================================================================
-MISSING_CODES = {-99, -9, -8, -7, -6, -1}
+SLOTS = 144
+MACT = [f"Mact{i}" for i in range(1, SLOTS + 1)]
+SACT = [f"Sactn{i}" for i in range(1, SLOTS + 1)]
+WHERE = [f"Wherep{i}" for i in range(1, SLOTS + 1)]
+NA16 = np.int16(-32768)   # an empty cell in the int16 arrays
+CODE_BASE = 10000         # activity codes are below this
+MAX_DIARISTS = 64         # diarist records per household-day are below this
+INPUT = PROCESSED_DIR / "lu_data_at_home_with_dominant_activity.csv"
 
-def analyze_same_activity_diarists(lu_data):
-    """
-    Analyze whether diarists from the same household record the same activities
-    at the same time intervals (either both as main, both as secondary, or one as each).
 
-    Missing/non-response activity codes (MISSING_CODES) are excluded from the
-    comparison: two diarists both lacking a recorded activity at the same
-    interval are NOT counted as sharing an activity.
-    """
-    print("Starting analysis of same activities among household diarists...")
-    
-    # Get unique household-day combinations
-    household_days = lu_data[['HID', 'DIARY']].drop_duplicates()
-    print(f"Found {len(household_days)} unique household-day combinations")
-    
-    # Initialize results storage
-    results = {
-        'same_activity_counts': [],
-        'household_summary': [],
-        'interval_details': []
-    }
-    
-    # Process each household-day
-    for _, (hid, diary) in household_days.iterrows():
-        household_data = lu_data[(lu_data['HID'] == hid) & (lu_data['DIARY'] == diary)]
-        
-        if len(household_data) < 2:
-            continue  # Skip households with only one diarist
-            
-        diarists = household_data['PID'].unique()
-        n_diarists = len(diarists)
-        
-        # Track same activities per interval
-        same_activity_intervals = 0
-        total_comparable_intervals = 0
-        
-        household_interval_details = []
-        
-        # Check each 10-minute interval
-        for interval in range(1, 145):  # Mact1 to Mact144, Sactn1 to Sactn144
-            mact_col = f'Mact{interval}'
-            sactn_col = f'Sactn{interval}'
-            
-            # Get activities for each diarist in this interval
-            diarist_activities = {}
-            for diarist in diarists:
-                diarist_data = household_data[household_data['PID'] == diarist].iloc[0]
-                mact = diarist_data[mact_col] if not pd.isna(diarist_data[mact_col]) else None
-                sactn = diarist_data[sactn_col] if not pd.isna(diarist_data[sactn_col]) else None
-                # FIX: treat missing/non-response codes as "no activity recorded",
-                # matching the None branch below, instead of a comparable value.
-                if mact is not None and mact in MISSING_CODES:
-                    mact = None
-                if sactn is not None and sactn in MISSING_CODES:
-                    sactn = None
-                diarist_activities[diarist] = {
-                    'mact': mact,
-                    'sactn': sactn,
-                    'all_activities': set()
-                }
-                if mact is not None:
-                    diarist_activities[diarist]['all_activities'].add(mact)
-                if sactn is not None:
-                    diarist_activities[diarist]['all_activities'].add(sactn)
-            
-            # Check for same activities between all pairs of diarists
-            interval_has_same_activity = False
-            activity_pairs = []
-            
-            for i, diarist1 in enumerate(diarists):
-                for j, diarist2 in enumerate(diarists[i+1:], i+1):
-                    activities1 = diarist_activities[diarist1]['all_activities']
-                    activities2 = diarist_activities[diarist2]['all_activities']
-                    
-                    # Skip if no activities recorded
-                    if not activities1 or not activities2:
-                        continue
-                    
-                    # Find common activities
-                    common_activities = activities1.intersection(activities2)
-                    
-                    if common_activities:
-                        interval_has_same_activity = True
-                        
-                        # Determine activity type combination
-                        for activity in common_activities:
-                            type1 = []
-                            type2 = []
-                            
-                            if diarist_activities[diarist1]['mact'] == activity:
-                                type1.append('Mact')
-                            if diarist_activities[diarist1]['sactn'] == activity:
-                                type1.append('Sactn')
-                            if diarist_activities[diarist2]['mact'] == activity:
-                                type2.append('Mact')
-                            if diarist_activities[diarist2]['sactn'] == activity:
-                                type2.append('Sactn')
-                            
-                            for t1 in type1:
-                                for t2 in type2:
-                                    activity_pairs.append({
-                                        'diarist1': diarist1,
-                                        'diarist2': diarist2,
-                                        'activity': activity,
-                                        'type1': t1,
-                                        'type2': t2,
-                                        'combination': f"{t1}-{t2}"
-                                    })
-            
-            if activity_pairs:
-                same_activity_intervals += 1
-                household_interval_details.extend([{
-                    'HID': hid,
-                    'DIARY': diary,
-                    'interval': interval,
-                    **pair
-                } for pair in activity_pairs])
-            
-            total_comparable_intervals += 1
-        
-        # Calculate percentages
-        if total_comparable_intervals > 0:
-            same_activity_percentage = (same_activity_intervals / total_comparable_intervals) * 100
-        else:
-            same_activity_percentage = 0
-        
-        # Store household summary
-        results['household_summary'].append({
-            'HID': hid,
-            'DIARY': diary,
-            'n_diarists': n_diarists,
-            'same_activity_intervals': same_activity_intervals,
-            'total_intervals': total_comparable_intervals,
-            'same_activity_percentage': same_activity_percentage
-        })
-        
-        # Store interval details
-        results['interval_details'].extend(household_interval_details)
-    
-    return results
+def to_int16(frame):
+    a = frame.apply(pd.to_numeric, errors="coerce").to_numpy(dtype="float64")
+    return np.where(np.isnan(a), NA16, a).astype(np.int16)
 
-def analyze_activity_combinations(interval_details):
-    """Analyze the types of activity combinations (Mact-Mact, Mact-Sactn, etc.)"""
-    if not interval_details:
-        return {}
-    
-    details_df = pd.DataFrame(interval_details)
-    
-    # Count combination types
-    combination_counts = details_df['combination'].value_counts()
-    
-    # Count unique activities that are shared
-    shared_activities = details_df.groupby('activity').size().sort_values(ascending=False)
-    
-    return {
-        'combination_counts': combination_counts,
-        'shared_activities': shared_activities,
-        'details_df': details_df
-    }
 
-def create_visualizations(results, output_dir=FIGURES_DIR):
-    """Create visualizations for the same activity analysis"""
-    os.makedirs(output_dir, exist_ok=True)
-    
-    household_summary = pd.DataFrame(results['household_summary'])
-    
-    # Plot 1: Distribution of same activity percentages across households
-    plt.figure(figsize=(12, 8))
-    
-    plt.subplot(2, 2, 1)
-    plt.hist(household_summary['same_activity_percentage'], bins=20, edgecolor='black', alpha=0.7)
-    plt.xlabel('Percentage of Intervals with Same Activities')
-    plt.ylabel('Number of Households')
-    plt.title('Distribution of Same Activity Coincidence')
-    plt.grid(True, alpha=0.3)
-    
-    # Plot 2: Same activity percentage vs number of diarists
-    plt.subplot(2, 2, 2)
-    sns.boxplot(data=household_summary, x='n_diarists', y='same_activity_percentage')
-    plt.xlabel('Number of Diarists')
-    plt.ylabel('Same Activity Percentage')
-    plt.title('Same Activities by Household Size')
-    
-    # Plot 3: Cumulative distribution of same activity percentages
-    plt.subplot(2, 2, 3)
-    sorted_percentages = np.sort(household_summary['same_activity_percentage'])
-    y_vals = np.arange(1, len(sorted_percentages) + 1) / len(sorted_percentages)
-    plt.plot(sorted_percentages, y_vals, linewidth=2)
-    plt.xlabel('Same Activity Percentage')
-    plt.ylabel('Cumulative Proportion')
-    plt.title('Cumulative Distribution')
-    plt.grid(True, alpha=0.3)
-    
-    # Plot 4: Activity combination types (if available)
-    plt.subplot(2, 2, 4)
-    if results['interval_details']:
-        combo_analysis = analyze_activity_combinations(results['interval_details'])
-        combo_counts = combo_analysis['combination_counts']
-        if not combo_counts.empty:
-            plt.pie(combo_counts.values, labels=combo_counts.index, autopct='%1.1f%%', startangle=90)
-            plt.title('Activity Type Combinations')
-    
-    plt.tight_layout()
-    plt.savefig(f"{output_dir}/same_activity_analysis.png", dpi=300, bbox_inches='tight')
-    plt.show()
-    
-    # Additional detailed plot: Top shared activities
-    if results['interval_details']:
-        combo_analysis = analyze_activity_combinations(results['interval_details'])
-        shared_activities = combo_analysis['shared_activities']
-        
-        plt.figure(figsize=(12, 6))
-        top_activities = shared_activities.head(15)
-        plt.bar(range(len(top_activities)), top_activities.values)
-        plt.xlabel('Activity Code')
-        plt.ylabel('Frequency')
-        plt.title('Top 15 Most Frequently Shared Activities')
-        plt.xticks(range(len(top_activities)), top_activities.index, rotation=45)
-        plt.grid(True, alpha=0.3)
-        plt.tight_layout()
-        plt.savefig(f"{output_dir}/top_shared_activities.png", dpi=300, bbox_inches='tight')
-        plt.show()
+def read_records(path=INPUT):
+    """Identifiers and the 144-slot main, secondary and location codes of
+    every diarist record, as compact arrays."""
+    ids, M, S, W = [], [], [], []
+    header = pd.read_csv(path, nrows=0).columns
+    for c in SACT:
+        if c not in header:
+            raise ValueError(f"{path} has no column {c}")
+    for ch in pd.read_csv(path, usecols=["HID", "PID", "DIARY"] + MACT + SACT + WHERE,
+                          chunksize=20000):
+        ids.append(ch[["HID", "PID", "DIARY"]].copy())
+        M.append(to_int16(ch[MACT]))
+        S.append(to_int16(ch[SACT]))
+        W.append(to_int16(ch[WHERE]))
+    return pd.concat(ids, ignore_index=True), np.vstack(M), np.vstack(S), np.vstack(W)
 
-def print_detailed_analysis(results):
-    """Print detailed analysis results"""
-    household_summary = pd.DataFrame(results['household_summary'])
-    
-    print("\n" + "="*60)
-    print("SAME ACTIVITY ANALYSIS RESULTS")
-    print("="*60)
-    
-    print(f"\nOverall Statistics:")
-    print(f"Total multi-diarist households analyzed: {len(household_summary)}")
-    print(f"Mean same activity percentage: {household_summary['same_activity_percentage'].mean():.2f}%")
-    print(f"Median same activity percentage: {household_summary['same_activity_percentage'].median():.2f}%")
-    print(f"Standard deviation: {household_summary['same_activity_percentage'].std():.2f}%")
-    
-    print(f"\nDistribution by number of diarists:")
-    for n_diarists in sorted(household_summary['n_diarists'].unique()):
-        subset = household_summary[household_summary['n_diarists'] == n_diarists]
-        print(f"  {n_diarists} diarists: {len(subset)} households, "
-              f"mean {subset['same_activity_percentage'].mean():.2f}% same activities")
-    
-    # Percentile analysis
-    print(f"\nPercentile Analysis:")
-    percentiles = [25, 50, 75, 90, 95]
-    for p in percentiles:
-        value = np.percentile(household_summary['same_activity_percentage'], p)
-        print(f"  {p}th percentile: {value:.2f}%")
-    
-    # Extreme cases
-    print(f"\nExtreme Cases:")
-    max_idx = household_summary['same_activity_percentage'].idxmax()
-    min_idx = household_summary['same_activity_percentage'].idxmin()
-    print(f"  Highest coincidence: {household_summary.loc[max_idx, 'same_activity_percentage']:.2f}% "
-          f"(HID: {household_summary.loc[max_idx, 'HID']}, DIARY: {household_summary.loc[max_idx, 'DIARY']})")
-    print(f"  Lowest coincidence: {household_summary.loc[min_idx, 'same_activity_percentage']:.2f}% "
-          f"(HID: {household_summary.loc[min_idx, 'HID']}, DIARY: {household_summary.loc[min_idx, 'DIARY']})")
-    
-    # Activity combination analysis
-    if results['interval_details']:
-        combo_analysis = analyze_activity_combinations(results['interval_details'])
-        print(f"\nActivity Combination Types:")
-        for combo, count in combo_analysis['combination_counts'].items():
-            percentage = (count / len(results['interval_details'])) * 100
-            print(f"  {combo}: {count} occurrences ({percentage:.1f}%)")
-        
-        print(f"\nTop 5 Most Shared Activities:")
-        for activity, count in combo_analysis['shared_activities'].head(5).items():
-            print(f"  Activity {activity}: {count} occurrences")
+
+def shared_slots(g, d, t, codes, flags):
+    """For entries (group g, diarist d, slot t, code, flag 0 = main or
+    1 = secondary), the slot ids (g * 144 + t) in which at least two distinct
+    diarists of the group have the same code, and for each shared
+    (slot, code) its code and whether it is main for every diarist (0),
+    secondary for every diarist (1) or mixed (2)."""
+    key = (g.astype(np.int64) * SLOTS + t) * CODE_BASE + codes
+    pair = np.unique((key * MAX_DIARISTS + d) * 2 + flags)   # main sorts first
+    kd = pair // 2
+    first = np.ones(len(kd), bool)
+    first[1:] = kd[1:] != kd[:-1]                             # one entry per (key, diarist)
+    kd, fl = kd[first], (pair % 2)[first]
+    k = kd // MAX_DIARISTS
+    uk, start, cnt = np.unique(k, return_index=True, return_counts=True)
+    sh = cnt >= 2
+    nsec = np.add.reduceat(fl, start) if len(start) else np.array([], int)
+    kind = np.where(nsec == 0, 0, np.where(nsec == cnt, 1, 2))[sh]
+    sk = uk[sh]
+    return np.unique(sk // CODE_BASE), sk % CODE_BASE, kind
+
+
+def compute_sharing(ids, M, S, W, batch=20000):
+    """One row per multi-diarist household-day (HID, DIARY): number of
+    diarists, comparable slots, shared slots and the share in %, with the
+    counts of shared (slot, code) pairs by code and by kind."""
+    hid = ids["HID"].astype(str).to_numpy()
+    pid = ids["PID"].astype(str).to_numpy()
+    key = pd.Series(hid) + "|" + ids["DIARY"].astype(str).values
+    g_all, uniques = pd.factorize(key)
+    order = np.argsort(g_all, kind="stable")
+    g_all = g_all[order]
+    Mo, So, Wo = M[order], S[order], W[order]
+    hid_o, pid_o = hid[order], pid[order]
+    starts = np.r_[0, np.flatnonzero(np.diff(g_all)) + 1]
+    sizes = np.diff(np.r_[starts, len(g_all)])
+    # number of distinct persons per household-day (repeated records count once)
+    persons = np.array([len(set(pid_o[a:a + n])) for a, n in zip(starts, sizes)])
+    multi = np.flatnonzero(persons >= 2)
+    rows = {"key": [], "n_diarists": [], "comparable_slots": [], "shared_slots": []}
+    code_counts = np.zeros(CODE_BASE)
+    kinds = np.zeros(3)
+    for b in range(0, len(multi), batch):
+        grp = multi[b:b + batch]
+        idx = np.concatenate([np.arange(starts[i], starts[i] + sizes[i]) for i in grp])
+        gl = np.repeat(np.arange(len(grp)), sizes[grp])
+        # diarist index within the household-day: one per person
+        dl = np.concatenate([pd.factorize(pid_o[starts[i]:starts[i] + sizes[i]])[0] for i in grp])
+        m, s, w = Mo[idx], So[idx], Wo[idx]
+        home = w == 1
+        a, c = (m > 0) & home, (s > 0) & home
+        T = np.broadcast_to(np.arange(SLOTS), m.shape)
+        G = np.broadcast_to(gl[:, None], m.shape)
+        D = np.broadcast_to(dl[:, None], m.shape)
+        sl, codes, kind = shared_slots(
+            np.r_[G[a], G[c]], np.r_[D[a], D[c]], np.r_[T[a], T[c]],
+            np.r_[m[a], s[c]].astype(np.int64),
+            np.r_[np.zeros(a.sum(), np.int64), np.ones(c.sum(), np.int64)])
+        ng = len(grp)
+        shared = np.bincount(sl // SLOTS, minlength=ng)
+        # comparable: two or more distinct diarists at home with a valid code
+        has = a | c
+        gtd = np.unique((G[has].astype(np.int64) * SLOTS + T[has]) * MAX_DIARISTS + D[has])
+        gt, cnt = np.unique(gtd // MAX_DIARISTS, return_counts=True)
+        comparable = np.bincount(gt[cnt >= 2] // SLOTS, minlength=ng)
+        code_counts += np.bincount(codes, minlength=CODE_BASE)[:CODE_BASE]
+        kinds += np.bincount(kind, minlength=3)[:3]
+        rows["key"].extend(uniques[g_all[starts[grp]]])
+        rows["n_diarists"].extend(persons[grp])
+        rows["comparable_slots"].extend(comparable)
+        rows["shared_slots"].extend(shared)
+    out = pd.DataFrame(rows)
+    out[["HID", "DIARY"]] = out["key"].str.split("|", n=1, expand=True)
+    out = out.drop(columns="key")
+    with np.errstate(invalid="ignore", divide="ignore"):
+        out["same_activity_percentage"] = np.where(
+            out.comparable_slots > 0, 100 * out.shared_slots / out.comparable_slots, np.nan)
+    return out[["HID", "DIARY", "n_diarists", "comparable_slots", "shared_slots",
+                "same_activity_percentage"]], code_counts, kinds
+
+
+def by_diarists(summary):
+    """Mean and median share by number of diarists (7 and more pooled), with
+    sizes and results under the publication rules: groups of fewer than
+    MIN_N_UNFLAGGED household-days are given only as a size class and without
+    results, and the other sizes are rounded wherever such a group exists."""
+    s = summary.dropna(subset=["same_activity_percentage"]).copy()
+    s["diarists"] = np.where(s.n_diarists >= 7, "7+", s.n_diarists.astype(str))
+    t = s.groupby("diarists").same_activity_percentage.agg(["size", "mean", "median"])
+    t = t.rename(columns={"size": "household_days"})
+    small = t.household_days < MIN_N_UNFLAGGED
+    t["n_class"] = [size_class(n) for n in t.household_days]
+    # Results of groups below MIN_N_UNFLAGGED are withheld, not only flagged:
+    # a mean over a small group can reveal its size
+    t.loc[small, ["mean", "median"]] = np.nan
+    if small.any():
+        t.loc[~small, "household_days"] = round_size(t.loc[~small, "household_days"])
+    t.loc[small, "household_days"] = np.nan
+    return t.reset_index()
+
+
+def make_figure(summary, table, path):
+    s = summary.dropna(subset=["same_activity_percentage"])
+    fig, ax = plt.subplots(1, 2, figsize=(10, 4))
+    ax[0].hist(s.same_activity_percentage, bins=20, color="#2a78d6", edgecolor="white")
+    ax[0].set_xlabel("Shared share of comparable slots at home (%)")
+    ax[0].set_ylabel("Household-days")
+    shown = table[table["n_class"] == ""]
+    ax[1].bar(shown.diarists, shown["mean"], color="#2a78d6")
+    ax[1].set_xlabel("Number of diarists")
+    ax[1].set_ylabel("Mean share (%)")
+    for a in ax:
+        a.spines[["top", "right"]].set_visible(False)
+    fig.tight_layout()
+    fig.savefig(path, dpi=300, bbox_inches="tight")
+    plt.close(fig)
+
 
 def main():
-    """Main function to run the same activity analysis"""
-    print("Loading data...")
-    
-    # Load the data
-    try:
-        lu_data = pd.read_csv(PROCESSED_DIR / "lu_data_at_home_with_dominant_activity.csv")
-        print(f"Loaded {len(lu_data)} rows from lu_data_at_home_with_dominant_activity.csv")
-    except FileNotFoundError:
-        print(f"Error: {PROCESSED_DIR}/lu_data_at_home_with_dominant_activity.csv not found!")
-        return
-    
-    # Basic data info
-    print(f"Total diarists (unique PID): {lu_data['PID'].nunique()}")
-    print(f"Total households (unique HID): {lu_data['HID'].nunique()}")
-    
-    # Count diarists per household for context
-    diarists_per_household = lu_data.groupby(['HID', 'DIARY'])['PID'].nunique()
-    multi_diarist_households = diarists_per_household[diarists_per_household > 1]
-    print(f"Multi-diarist household-days: {len(multi_diarist_households)}")
-    
-    # Run the analysis
-    results = analyze_same_activity_diarists(lu_data)
-    
-    # Print results
-    print_detailed_analysis(results)
-    
-    # Create visualizations
-    print("\nCreating visualizations...")
-    create_visualizations(results)
-    
-    # Save detailed results to CSV
-    print("\nSaving detailed results to CSV files...")
-    
-    household_summary_df = pd.DataFrame(results['household_summary'])
-    household_summary_df.to_csv(PROCESSED_DIR / "same_activity_household_summary.csv", index=False)
-    print(f"Saved household summary to same_activity_household_summary.csv")
-    
-    if results['interval_details']:
-        interval_details_df = pd.DataFrame(results['interval_details'])
-        interval_details_df.to_csv(PROCESSED_DIR / "same_activity_interval_details.csv", index=False)
-        print(f"Saved interval details to same_activity_interval_details.csv")
-        
-        # Also save combination analysis
-        combo_analysis = analyze_activity_combinations(results['interval_details'])
-        combo_analysis['combination_counts'].to_csv(PROCESSED_DIR / "activity_combination_counts.csv", header=['count'])
-        combo_analysis['shared_activities'].to_csv(PROCESSED_DIR / "shared_activities_frequency.csv", header=['frequency'])
-    
-    print("\nAnalysis complete!")
+    print(f"Reading {INPUT}")
+    ids, M, S, W = read_records()
+    summary, code_counts, kinds = compute_sharing(ids, M, S, W)
+    summary.to_csv(PROCESSED_DIR / "same_activity_household_summary.csv", index=False)
+    table = by_diarists(summary)
+    table.to_csv(PROCESSED_DIR / "same_activity_by_diarists.csv", index=False)
+
+    tot = kinds.sum()
+    kinds_s = pd.Series(kinds, index=["main for every diarist", "secondary for every diarist",
+                                      "mixed"], name="count")
+    kinds_s.to_csv(PROCESSED_DIR / "activity_combination_counts.csv", header=["count"])
+    freq = pd.Series(code_counts).astype(int)
+    freq = freq[freq > 0].sort_values(ascending=False)
+    freq.index.name = "activity"
+    freq.to_csv(PROCESSED_DIR / "shared_activities_frequency.csv", header=["frequency"])
+
+    s = summary.same_activity_percentage.dropna()
+    print(f"Multi-diarist household-days: {len(summary)}; with at least one comparable slot: {len(s)}")
+    print(f"Share of comparable slots at home with a shared activity: mean {s.mean():.1f}%, "
+          f"median {s.median():.1f}%")
+    print(table.to_string(index=False))
+    if tot:
+        print("Shared (slot, code) pairs: " + ", ".join(
+            f"{k} {100 * v / tot:.1f}%" for k, v in kinds_s.items()))
+        print("Most frequently shared codes: " + ", ".join(
+            f"{c} ({100 * n / tot:.1f}%)" for c, n in freq.head(5).items()))
+    make_figure(summary, table, FIGURES_DIR / "same_activity_analysis.png")
+
 
 if __name__ == "__main__":
     main()
