@@ -273,7 +273,7 @@ New outputs:
 |---|---|
 | `cluster_summary.csv` | New columns `mean_profile_peak_w` and `mean_profile_peak_time`: maximum of each global cluster's mean profile and its clock time (previously read off Figure 2) |
 | `cluster_mean_profiles.csv` | Mean profile of each global cluster (144 slots, W, slot 0 = 04:00) |
-| `stratified_cluster_mean_profiles.csv` | The same for every cluster of every stratified solution, with size, share, daily energy and both peaks, under the publication rules of Section 3.13 |
+| `stratified_cluster_mean_profiles.csv` | The same for every cluster of every stratified solution, with size, share, daily energy and both peaks, under the publication rules of Section 3.13 (withdrawn from `outputs/` in version 1.0.1, Section 3.14) |
 | `Country_DayType_Analysis/mean_profiles_country_daytype.csv` | Mean profile, daily energy, mean daily peak and coincident peak for each country and day type, each country over both day types, each day type over all countries, and the whole sample |
 | `country_comparison_summary.csv`, `country_daytype_combined_summary.csv`, `peak_power_daytype_comparison.csv` | New coincident-peak columns |
 | `Country_DayType_Analysis/country_daytype_profiles_small_multiples.png` | Working-day and non-working-day mean profiles, one panel per country, with the maximum of each profile marked |
@@ -363,12 +363,51 @@ marks a fallback value in the log.
 
 Country cluster figure. `pipeline/plot_country_cluster_profiles.py` draws the
 mean profiles of the clusters of every country (Figure S2 of the manuscript)
-from `stratified_cluster_mean_profiles.csv` alone, so it needs no microdata.
+from `stratified_cluster_mean_profiles.csv` alone, so it needs no microdata
+(the published copy of that file was withdrawn in version 1.0.1, Section
+3.14, and the figure is drawn from the copy in `processed/`).
 `run_pipeline.sh` runs it after Stage 06, and it can be run on its own with
 the path of an export file as argument. Clusters are coloured by their size
 rank within the country, withheld clusters are not drawn (their
 household-days are part of the largest cluster), and flagged ones are drawn
 with dashed lines.
+
+### 3.14 Sizes recoverable from published means, and version 1.0.1 (November 2026)
+
+An audit in November 2026 found that the rules of Section 3.13 did not hold in
+the files published with version 1.0.0. Slot powers are whole watts, so the
+household power in every slot is an integer and the mean profile of a cluster
+of n household-days is a vector of 144 integers divided by n. The smallest n
+for which all 144 values times n are integers is therefore the size of the
+cluster. In `stratified_cluster_mean_profiles.csv` this gives the sizes of all
+17 clusters of 20 to 49 household-days and the exact sizes behind all 140
+sizes rounded to the nearest 10, and the recovered sizes add up to the
+published stratum size in all 47 solutions. The merged size of each largest
+cluster, with the size of the largest cluster alone in
+`country_daytype_combined_summary.csv`, bounds the household-days of the
+withheld clusters of a solution to at most ten values. Rounding the published
+profiles does not prevent this, because the stratum profiles and sizes of
+`mean_profiles_country_daytype.csv` let the cluster sizes be estimated by
+least squares from the 144 equations of each stratum: with the profiles
+rounded to 1 W, 5 of the 17 sizes between 20 and 49 are still recovered
+exactly and 15 to within five household-days, and with 10 W none exactly but
+5 to 7 to within five. The rounded sizes of the stratified clusters in
+`consolidated_circular_stats.csv`, with the exact stratum sizes, also bound
+the withheld clusters more narrowly than the class "fewer than 20" (to at most
+11 household-days for the withheld cluster of Poland on working days).
+
+Version 1.0.1 therefore withdraws `stratified_cluster_mean_profiles.csv`, the
+columns `largest_cluster_size` and `largest_cluster_pct` of
+`country_daytype_combined_summary.csv`, and the rows of the stratified
+solutions in `consolidated_circular_stats.csv`, which keeps the nine global
+clusters quoted in the manuscript. No remaining file holds a group of fewer
+than 50 household-days or a breakdown of a stratum into clusters. The code is
+unchanged: Stage 06 still writes the stratified export to `processed/`, where
+it is a working file that must not be shared. Version 1.1.0 will report every
+cluster of fewer than 50 household-days together with the largest cluster of
+its solution in every export, so that sizes can be published exactly, and
+`disclosure.py` will run the two tests above on every file before it is
+written.
 
 ## 4. Design choices that constrain interpretation
 
@@ -399,21 +438,21 @@ of the run of 11 October 2026.
 | Share of retained variance between clusters (22.5%) | Stage 05 console log | 1 - WCSS(K = 9) / (cumulative variance at 91 components x 144 x 192,268) |
 | Global cluster sizes and modal categories | `cluster_summary.csv` | Refreshed (K = 9) |
 | Global cluster daily energy, mean daily peak and coincident peak | `cluster_summary.csv`, `cluster_mean_profiles.csv` | Refreshed (coincident peaks now read from the file, not from Figure 2) |
-| Circular peak-time statistics | `consolidated_circular_stats.csv` | Refreshed (466 zero-demand days, all in Cluster 0) |
+| Circular peak-time statistics | `consolidated_circular_stats.csv` | Refreshed (466 zero-demand days, all in Cluster 0). Global solution only from version 1.0.1 (Section 3.14) |
 | Stability of the global solution | `cluster_stability.csv`, Stage 05 console log (ARI of each half-sample) | New (silhouette 0.13, mean ARI 0.89, Jaccard 0.69 to 0.95) |
 | Day-type shares and day-type clustering | Stage 06 console log, `DayType_Analysis/` | Refreshed (100,306 working and 91,962 non-working household-days, K = 4 and 6) |
 | Coincident and mean daily peaks by country and day type | `mean_profiles_country_daytype.csv`, `peak_power_daytype_comparison.csv`, Stage 06 console log | New (coincident peak higher on non-working days in 15 of 15 countries) |
 | Per-country K, daily energy, peaks and peak times | `country_comparison_summary.csv` | Refreshed (K between 4 and 7) |
 | Country-by-day-type comparison (energy, peak, peak time, K) | `country_daytype_combined_summary.csv` | Refreshed |
-| Recurring profile shapes in the national solutions | `stratified_cluster_mean_profiles.csv` | Checked for all 15 countries (Figure S2) |
-| Diarist coincidence percentages | `same_activity_household_summary.csv` | Verified. Unaffected |
-| Shared activity counts (sleep, TV, eating) | `shared_activities_frequency.csv` | Verified (7,980,406, 1,172,172 and 1,048,520). Unaffected |
+| Recurring profile shapes in the national solutions | `stratified_cluster_mean_profiles.csv` | Checked for all 15 countries (Figure S2). Not published from version 1.0.1 (Section 3.14) |
+| Diarist coincidence percentages | `same_activity_household_summary.csv` | Under revision for version 1.1.0: the shipped Stage 09 counts all 144 slots in the denominator and does not use the location (`CHANGELOG.md`) |
+| Shared activity counts (sleep, TV, eating) | `shared_activities_frequency.csv` | Under revision for version 1.1.0: a code recorded as both main and secondary activity is counted twice (`CHANGELOG.md`) |
 | Country code mapping, exclusion of Germany | author confirmation | Verified |
 | `INC4_1` categories | Eurostat (pers. comm., 2026) | Eight categories, not the five in the published list |
 | `IND44` meaning | SUF Annex 2 | Permanent or fixed-term contract (employees only, not collected in NO) |
 
 The aggregate files in `outputs/` contain no microdata and follow the
-publication rules of Section 3.13. The files of the run of 14 October 2026
+publication rules of Section 3.13, with the withdrawals of Section 3.14. The files of the run of 14 October 2026
 were brought under these rules after the run, with the same functions the
 stages now apply. The rows that join each largest cluster with the withheld
 clusters of its solution were computed from the mean of the stratum minus the

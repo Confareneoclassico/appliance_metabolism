@@ -1,6 +1,6 @@
 # HETUS household electricity profiling pipeline
 
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23412742.svg)](https://doi.org/10.5281/zenodo.23412742)
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.23412741.svg)](https://doi.org/10.5281/zenodo.23412741)
 
 Reproducible pipeline that derives household electricity demand profiles at
 10-minute resolution from the Harmonised European Time-Use Survey (HETUS),
@@ -72,6 +72,7 @@ corrections listed in `docs/PIPELINE.md` Section 3.
 ├── LICENSE                    MIT License (code)
 ├── LICENSES/CC-BY-4.0.txt     CC BY 4.0 (outputs/ and docs/)
 ├── CITATION.cff               Citation metadata
+├── CHANGELOG.md               Changes between archived versions
 ├── .zenodo.json               Metadata for the Zenodo archive
 ├── requirements.txt           Python dependencies
 ├── run_pipeline.sh            Runs Stages 01 to 11 in order
@@ -98,7 +99,8 @@ corrections listed in `docs/PIPELINE.md` Section 3.
 │   └── statistical_validation_v1_UNPATCHED_no_cramers_v_SUPERSEDED_BY_07.py
 ├── outputs/                   Aggregate results quoted in the manuscript
 │                              (run of 14 October 2026, no microdata,
-│                              under Eurostat's publication rules)
+│                              under Eurostat's publication rules, with
+│                              the withdrawals of version 1.0.1)
 ├── data/raw/                  Raw inputs (not tracked)
 ├── processed/                 Intermediate and output CSVs (not tracked)
 └── Figures/                   Figures (not tracked)
@@ -124,6 +126,14 @@ results are in `outputs/`, under Eurostat's publication rules for HETUS
 (`docs/PIPELINE.md` Section 3.13). Section 5 of the same file lists the output
 behind every quantitative claim.
 
+Version 1.0.1 withdraws `outputs/stratified_cluster_mean_profiles.csv`, two
+columns of `outputs/country_daytype_combined_summary.csv` and the stratified
+rows of `outputs/consolidated_circular_stats.csv`, from which the sizes of
+small clusters could be derived (`CHANGELOG.md`, `docs/PIPELINE.md` Section
+3.14). The code and the results quoted in the manuscript are unchanged.
+`CHANGELOG.md` also lists the issues found by the audit of November 2026 that
+will be corrected in version 1.1.0.
+
 ## License
 
 The code is released under the MIT License (`LICENSE`). The aggregate results
@@ -136,7 +146,8 @@ remain subject to Eurostat's conditions of access.
 
 If you use this pipeline, please cite the accompanying manuscript (full
 citation to be added on publication), the archived version of this
-repository on Zenodo (version 1.0.0, https://doi.org/10.5281/zenodo.23412742),
+repository on Zenodo (all versions: https://doi.org/10.5281/zenodo.23412741,
+version 1.0.0: https://doi.org/10.5281/zenodo.23412742),
 and the HETUS data source: Eurostat,
 Harmonised European Time Use Surveys (HETUS), 2010 wave, scientific use files,
 release of November 2020.
