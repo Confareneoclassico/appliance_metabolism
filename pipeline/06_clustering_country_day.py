@@ -10,7 +10,11 @@ from kneed import KneeLocator
 import warnings
 import os
 from paths import COUNTRY_DIR, DAYTYPE_DIR, COUNTRY_DAYTYPE_DIR, PROCESSED_DIR
-from disclosure import protect, round_size, MIN_N_PUBLISH, MIN_N_UNFLAGGED
+from disclosure import (protect, round_size, published_groups, check_export,
+                        check_strata, assert_sizes, size_class,
+                        MIN_N_PUBLISH, MIN_N_UNFLAGGED)
+from peaks import circular_peak_stats, clock_str
+from countries import NAME as COUNTRY_NAMES
 from scipy import stats
 warnings.filterwarnings("ignore")
 
@@ -69,10 +73,9 @@ CLUSTER_ON_SOCIO = os.environ.get("HETUS_CLUSTER_ON_SOCIO", "0") == "1"
 # Share of variance kept by PCA, the same as in the global solution (Stage 05).
 PCA_VARIANCE = 0.95
 # The profile exports follow Eurostat's publication rules for HETUS (see
-# disclosure.py): groups of fewer than 20 household-days are listed without
-# size or statistics, groups of 20 to 49 are flagged and listed without their
-# size, and the other sizes are rounded where a group of the same solution is
-# withheld or flagged.
+# disclosure.py): every cluster of fewer than MIN_N_UNFLAGGED household-days is
+# reported together with the largest cluster of its solution, and a stratum
+# of fewer than MIN_N_UNFLAGGED household-days stops the stage (check_strata).
 PROFILE_STAT_COLS = ['avg_daily_energy_wh', 'avg_peak_power_w',
                      'mean_profile_peak_w', 'mean_profile_peak_time']
 # The first pass of this stage clustered every country on all its data under
@@ -89,6 +92,11 @@ INK, INK_2, GRID, AXIS = "#0b0b0b", "#52514e", "#e1e0d9", "#c3c2b7"
 
 # Rows of cluster mean profiles, written to one file at the end of the stage.
 PROFILE_EXPORT = []
+# How K was chosen in each solution, by analysis name: "knee" when
+# KneeLocator found one, "fallback" otherwise. The exports record it (audit of
+# November 2026, D6), since a fallback cannot be told apart from a knee at the
+# same K.
+K_SELECTION = {}
 
 print(f"Clustering features: "
       f"{'power slots and one-hot background variables' if CLUSTER_ON_SOCIO else 'power slots only'}; "
@@ -105,24 +113,9 @@ clustering_data = pd.read_csv(PROCESSED_DIR / "prepared_clustering_data.csv")
 # COUNTRY LABELS
 # ============================================================================
 
-country_map = {
-    0: "BE",
-    1: "DE",
-    2: "EE",
-    3: "EL",
-    4: "ES",
-    5: "FI",
-    6: "FR",
-    7: "HU",
-    8: "IT",
-    9: "LU",
-    10: "NL",
-    11: "NO",
-    12: "PL",
-    13: "RO",
-    14: "RS",
-    15: "UK"
-}
+# The codes are positions in countries.COUNTRIES, the list Stage 01 codes the
+# countries with (audit of November 2026, L1)
+country_map = COUNTRY_NAMES
 
 # Preserve original numeric code if needed later
 clustering_data["COUNTRY_CODE"] = clustering_data["COUNTRY"]
@@ -237,6 +230,7 @@ def perform_clustering_analysis(data, analysis_name, output_dir, energy_cols, ca
         else:
             optimal_k = 2
             k_note = " (only one K tested, fallback value)"
+        K_SELECTION[analysis_name] = "fallback" if k_note else "knee"
         
         print(f"  Optimal number of clusters: {optimal_k}{k_note}")
         
@@ -409,10 +403,9 @@ def create_cluster_summary(data_with_clusters, energy_cols, cat_features,
             'std_daily_energy_wh': (np.sum(energy_data, axis=1) * INTERVAL_HOURS).std(),
             'avg_peak_energy_w': np.max(energy_data, axis=1).mean(),
             'std_peak_energy_w': np.max(energy_data, axis=1).std(),
-            # Clock time of the linear mean of the household-day peak slots
-            # (see Stage 08 for the circular mean)
-            'avg_peak_hour': int(slot_to_clock_str(np.argmax(energy_data, axis=1).mean())[:2]),
-            'avg_peak_minute': int(slot_to_clock_str(np.argmax(energy_data, axis=1).mean())[3:])
+            # Circular mean clock time of the household-day peaks, ties at
+            # the daily maximum shared and days without demand left out
+            'peak_time_circular_mean': clock_str(circular_peak_stats(energy_data)[0])
         }
         
         # Add mode for categorical features
@@ -467,31 +460,33 @@ def profile_row(meta, summary, mean_profile):
 
 
 def collect_cluster_profiles(data_with_clusters, energy_cols, analysis_name):
-    """Keep the mean profile of every cluster of a stratified solution for
-    stratified_cluster_mean_profiles.csv, written at the end of the stage.
+    """Keep the mean profile of every published group of a stratified solution
+    for stratified_cluster_mean_profiles.csv, written at the end of the stage.
 
-    Clusters of fewer than MIN_N_PUBLISH household-days are withheld from the
-    export (disclosure.py). Since the mean profile of every stratum is
-    published (mean_profiles_country_daytype.csv), the profile of a withheld
-    cluster could be recovered by subtracting the published clusters from it,
-    so the household-days of the withheld clusters are reported together with
-    the largest cluster of the solution, whose row is marked includes_withheld.
+    Every cluster of fewer than MIN_N_UNFLAGGED household-days is reported
+    together with the largest cluster of the solution (published_groups in
+    disclosure.py, Option A of the audit of November 2026), whose row gives the
+    number of small clusters merged into it. Every published group then has at
+    least MIN_N_UNFLAGGED household-days, so sizes are exact, and the groups of
+    a solution add up to its stratum, so no small cluster can be derived by
+    subtraction from the stratum profiles of mean_profiles_country_daytype.csv.
     """
     n_total = len(data_with_clusters)
-    sizes = data_with_clusters["cluster"].value_counts()
-    # Rank of each cluster by size within the stratum (1 = largest), kept so
-    # that figures can order clusters after the sizes have been rounded
+    if n_total < MIN_N_UNFLAGGED:
+        print(f"  {analysis_name}: {n_total} household-days, not exported")
+        return
+    groups, small, largest = published_groups(data_with_clusters["cluster"])
+    sizes = pd.Series(groups).value_counts().sort_index()
+    # Rank of each group by size within the stratum (1 = largest)
     ranks = sizes.rank(ascending=False, method="first").astype(int)
-    largest = sizes.idxmax()
-    withheld = sorted(sizes.index[sizes < MIN_N_PUBLISH]) if sizes[largest] >= MIN_N_PUBLISH else []
-    for cluster_id in sorted(data_with_clusters["cluster"].unique()):
-        members = [cluster_id] + (withheld if cluster_id == largest else [])
-        energy_data = data_with_clusters.loc[
-            data_with_clusters["cluster"].isin(members), energy_cols].values
-        summary, mean_profile = profile_stats(energy_data)
+    energy = data_with_clusters[energy_cols].to_numpy(dtype=float)
+    for g in sizes.index:
+        summary, mean_profile = profile_stats(energy[groups == g])
         meta = {'stratum': analysis_name, 'stratum_n': n_total,
-                'cluster': int(cluster_id), 'size_rank': int(ranks[cluster_id]),
-                'includes_withheld': bool(cluster_id == largest and withheld),
+                'k': int(data_with_clusters["cluster"].nunique()),
+                'k_selection': K_SELECTION.get(analysis_name, ""),
+                'cluster': int(g), 'size_rank': int(ranks[g]),
+                'n_small_clusters_merged': len(small) if g == largest else 0,
                 'share_pct': 100 * summary['n'] / n_total}
         PROFILE_EXPORT.append(profile_row(meta, summary, mean_profile))
 
@@ -500,9 +495,11 @@ def write_profile_exports():
     """Write the cluster mean profiles of all stratified solutions."""
     if PROFILE_EXPORT:
         path = PROCESSED_DIR / "stratified_cluster_mean_profiles.csv"
-        protect(pd.DataFrame(PROFILE_EXPORT), n_col='n', stat_cols=PROFILE_STAT_COLS,
-                group_col='stratum', share_col='share_pct',
-                total_col='stratum_n').to_csv(path, index=False)
+        table = protect(pd.DataFrame(PROFILE_EXPORT), n_col='n', stat_cols=PROFILE_STAT_COLS,
+                        group_col='stratum', share_col='share_pct', total_col='stratum_n',
+                        flagged_results=False)
+        check_export(table, n_col='n', stratum_col='stratum', stratum_total_col='stratum_n')
+        table.to_csv(path, index=False)
         print(f"Cluster mean profiles of the stratified solutions saved to: {path}")
 
 
@@ -521,10 +518,16 @@ def export_daytype_mean_profiles(data, energy_cols):
         summary, mean_profile = profile_stats(g[energy_cols].values)
         rows.append(profile_row({'country': country, 'day_type': day_type},
                                 summary, mean_profile))
-    # Within a country, the 'all' group is the sum of the two day types, so
-    # rounding is applied country by country if a group is withheld or flagged
+    # The 'all' rows of a country are the sum of its two day types, and the
+    # 'ALL' rows the sum over countries, so the whole table is one set: if a
+    # group were withheld or flagged, every other size would be rounded,
+    # including those of the ALL rows, which used to stay exact (audit of
+    # November 2026, L4). With the stratum guard of Stage 06 (check_strata)
+    # every group has at least MIN_N_UNFLAGGED household-days, and nothing is
+    # rounded.
     profiles = protect(pd.DataFrame(rows), n_col='n', stat_cols=PROFILE_STAT_COLS,
-                       group_col='country')
+                       flagged_results=False)
+    check_export(profiles, n_col='n')
     path = COUNTRY_DAYTYPE_DIR / "mean_profiles_country_daytype.csv"
     profiles.to_csv(path, index=False)
     print(f"  Mean profiles by country and day type saved to: {path}")
@@ -534,14 +537,19 @@ def export_daytype_mean_profiles(data, energy_cols):
           "working vs non-working days:")
     print(f"  {'':4s} {'coincident W (time)':>34s} {'change':>8s}   "
           f"{'mean daily peak W':>20s} {'change':>8s}")
-    higher = 0
+    higher, compared = 0, 0
     countries = sorted(c for c in profiles['country'].unique() if c != 'ALL')
     for c in countries + ['ALL']:
         w = profiles[(profiles['country'] == c) & (profiles['day_type'] == 'working')]
         nw = profiles[(profiles['country'] == c) & (profiles['day_type'] == 'non_working')]
-        if w.empty or nw.empty:
+        # A day type without published results is left out of the comparison
+        # and of the count of countries (audit of November 2026, L15)
+        if (w.empty or nw.empty or pd.isna(w['mean_profile_peak_w'].iloc[0])
+                or pd.isna(nw['mean_profile_peak_w'].iloc[0])):
             continue
         w, nw = w.iloc[0], nw.iloc[0]
+        if c != 'ALL':
+            compared += 1
         d_coinc = 100 * (nw['mean_profile_peak_w'] / w['mean_profile_peak_w'] - 1)
         d_indiv = 100 * (nw['avg_peak_power_w'] / w['avg_peak_power_w'] - 1)
         if c != 'ALL' and d_coinc > 0:
@@ -550,7 +558,7 @@ def export_daytype_mean_profiles(data, energy_cols):
               f"{nw['mean_profile_peak_w']:7.0f} ({nw['mean_profile_peak_time']}) "
               f"{d_coinc:+7.1f}%   {w['avg_peak_power_w']:8.0f} -> {nw['avg_peak_power_w']:8.0f} "
               f"{d_indiv:+7.1f}%")
-    print(f"  Coincident peak higher on non-working days in {higher} of {len(countries)} countries")
+    print(f"  Coincident peak higher on non-working days in {higher} of {compared} countries")
     return profiles
 
 
@@ -583,20 +591,23 @@ def plot_daytype_small_multiples(profiles, output_dir=COUNTRY_DAYTYPE_DIR):
         ns = {}
         for day_type, colour, label in styles:
             r = prof[(prof['country'] == country) & (prof['day_type'] == day_type)]
-            if r.empty or bool(r['withheld'].iloc[0]):
+            if r.empty:
+                ns[day_type] = "0"
                 continue
-            y = r[pcols].values[0].astype(float)
             n = r['n'].iloc[0]
-            # A flagged group (20 to 49) is shown by its size class only
+            # A group without a published size is titled by its size class,
+            # not n = 0 (audit of November 2026, L15)
             ns[day_type] = f"{int(n):,}" if pd.notna(n) else str(r['n_class'].iloc[0])
-            # Groups of 20 to 49 household-days are flagged by a dashed line
+            y = r[pcols].values[0].astype(float)
+            if bool(r['withheld'].iloc[0]) or not np.isfinite(y).any():
+                continue
             ax.plot(hours, y, color=colour, linewidth=1.6, label=label,
                     linestyle='--' if r['n_class'].iloc[0] else '-')
             k = int(np.nanargmax(y))
             ax.plot(hours[k], y[k], 'o', color=colour, markersize=5.5,
                     markeredgecolor='white', markeredgewidth=0.9, zorder=3)
-        ax.set_title(f"{country}  (n = {ns.get('working', '0')} / "
-                     f"{ns.get('non_working', '0')})", fontsize=11, color=INK, loc='left')
+        ax.set_title(f"{country}  (n = {ns['working']} / {ns['non_working']})",
+                     fontsize=11, color=INK, loc='left')
         ax.grid(True, axis='y', color=GRID, linewidth=0.7)
         ax.set_axisbelow(True)
         for side in ('top', 'right'):
@@ -663,6 +674,7 @@ def create_country_comparison_summary(country_results):
             'country': country,
             'n_households': len(country_df),
             'n_clusters': n_clusters,
+            'k_selection': K_SELECTION.get(f"{country}", ""),
             'avg_daily_energy_wh': daily_energy.mean(),
             'std_daily_energy_wh': daily_energy.std(),
             'avg_peak_power_w': peak_power.mean(),
@@ -680,7 +692,10 @@ def create_country_comparison_summary(country_results):
     # Sort by number of households
     comparison_df = comparison_df.sort_values('n_households', ascending=False)
     
-    # Save comparison data
+    # Save comparison data. The shares of working and non-working days give
+    # the household-days of each day type, which the stratum guard keeps at
+    # MIN_N_UNFLAGGED or more (audit of November 2026, L5)
+    assert_sizes(comparison_df, ['n_households'], name="country_comparison_summary.csv")
     comparison_df.to_csv(COUNTRY_DIR / "country_comparison_summary.csv", index=False)
     print(f"Country comparison summary saved to: {COUNTRY_DIR}/country_comparison_summary.csv")
     
@@ -750,7 +765,7 @@ def create_country_comparison_visualization(comparison_df):
 # COUNTRY & DAY TYPE COMBINED ANALYSIS
 # ============================================================================
 
-def perform_country_daytype_combined_analysis(clustering_data, min_households=20):
+def perform_country_daytype_combined_analysis(clustering_data, min_households=MIN_N_UNFLAGGED):
     """
     Perform clustering analysis for each combination of country and day type.
     This is the most granular analysis: clusters specific to each (country, day_type).
@@ -841,30 +856,28 @@ def create_combined_analysis_summary(combined_results):
         # Number of clusters found
         n_clusters = data['cluster'].nunique() if 'cluster' in data.columns else 0
         
-        # Cluster sizes. Where a cluster of the solution has fewer than 50
-        # household-days, its size is withheld or given only as a class in the
-        # cluster exports, and the other sizes are rounded (disclosure.py). The
-        # largest cluster is then reported in the same way, rounded to the
-        # nearest ten with its share computed from the rounded size, since its
-        # exact size would let the small cluster's size be derived.
+        # The largest published group: the largest cluster together with the
+        # clusters of fewer than MIN_N_UNFLAGGED household-days (Option A, as in
+        # stratified_cluster_mean_profiles.csv), so its size is exact and the
+        # size of the largest cluster alone, from which a small cluster could
+        # be derived, is never published.
         if 'cluster' in data.columns:
-            cluster_sizes = data['cluster'].value_counts()
-            largest_cluster = cluster_sizes.iloc[0] if len(cluster_sizes) > 0 else 0
-            largest_cluster_pct = (largest_cluster / len(data)) * 100
-            if (cluster_sizes < MIN_N_UNFLAGGED).any():
-                largest_cluster = int(round_size(largest_cluster))
-                largest_cluster_pct = round(100 * largest_cluster / len(data))
+            groups, small, largest = published_groups(data['cluster'])
+            largest_cluster = int((groups == largest).sum())
+            largest_cluster_pct = 100 * largest_cluster / len(data)
+            n_merged = len(small)
         else:
-            largest_cluster = 0
-            largest_cluster_pct = 0
+            largest_cluster, largest_cluster_pct, n_merged = 0, 0, 0
         
         summary_data.append({
             'country': country,
             'day_type': day_type,
             'n_households': len(data),
             'n_clusters': n_clusters,
-            'largest_cluster_size': largest_cluster,
-            'largest_cluster_pct': largest_cluster_pct,
+            'k_selection': K_SELECTION.get(f"{country}_{day_type}_days", ""),
+            'largest_group_size': largest_cluster,
+            'largest_group_pct': largest_cluster_pct,
+            'n_small_clusters_merged': n_merged,
             'avg_daily_energy_wh': daily_energy.mean(),
             'std_daily_energy_wh': daily_energy.std(),
             'avg_peak_power_w': peak_power.mean(),
@@ -882,6 +895,8 @@ def create_combined_analysis_summary(combined_results):
     summary_df = summary_df.sort_values(['country', 'day_type'])
     
     # Save summary
+    assert_sizes(summary_df, ['n_households', 'largest_group_size'],
+                 name="country_daytype_combined_summary.csv")
     summary_df.to_csv(COUNTRY_DAYTYPE_DIR / "country_daytype_combined_summary.csv", index=False)
     print(f"Combined analysis summary saved to: {COUNTRY_DAYTYPE_DIR}/country_daytype_combined_summary.csv")
     
@@ -1436,6 +1451,7 @@ def create_cross_country_comparisons(combined_results):
             print(f"  {row['country']}: {row['avg_daily_energy']:.0f} Wh/day "
                   f"({row['n_households']} households, {row['n_clusters']} clusters)")
         
+        assert_sizes(working_comparison, ['n_households'], name="working_days_cross_country.csv")
         working_comparison.to_csv(COUNTRY_DAYTYPE_DIR / "working_days_cross_country.csv", index=False)
         print(f"  Saved to: {COUNTRY_DAYTYPE_DIR}/working_days_cross_country.csv")
     
@@ -1466,6 +1482,7 @@ def create_cross_country_comparisons(combined_results):
             print(f"  {row['country']}: {row['avg_daily_energy']:.0f} Wh/day "
                   f"({row['n_households']} households, {row['n_clusters']} clusters)")
         
+        assert_sizes(non_working_comparison, ['n_households'], name="non_working_days_cross_country.csv")
         non_working_comparison.to_csv(COUNTRY_DAYTYPE_DIR / "non_working_days_cross_country.csv", index=False)
         print(f"  Saved to: {COUNTRY_DAYTYPE_DIR}/non_working_days_cross_country.csv")
     
@@ -1613,7 +1630,10 @@ def compare_peak_power_day_types(combined_results):
     
     # Create DataFrame and sort by difference
     comparison_df = pd.DataFrame(comparison_results)
-    
+    if comparison_df.empty:
+        print("  No country has results for both day types.")
+        return comparison_df, percentage_non_working_not_higher
+
     # Sort by whether non-working is not higher, then by difference
     comparison_df = comparison_df.sort_values(
         ['non_working_not_higher', 'difference_w'], 
@@ -1621,6 +1641,8 @@ def compare_peak_power_day_types(combined_results):
     )
     
     # Save results
+    assert_sizes(comparison_df, ['n_households_working', 'n_households_non_working'],
+                 name="peak_power_daytype_comparison.csv")
     comparison_df.to_csv(
         COUNTRY_DAYTYPE_DIR / "peak_power_daytype_comparison.csv", 
         index=False
@@ -1787,7 +1809,7 @@ elif "COUNTRY" in clustering_data.columns:
     for country in countries:
         country_data = clustering_data[clustering_data["COUNTRY"] == country]
         
-        if len(country_data) < 20:  # Or your threshold
+        if len(country_data) < MIN_N_UNFLAGGED:
             print(f"Skipping {country}: only {len(country_data)} households")
             continue
         
@@ -1834,6 +1856,15 @@ clustering_data_with_daytypes = clustering_data[clustering_data["day_type"].notn
 print(f"\nRemoved {original_count - len(clustering_data_with_daytypes)} households with undetermined day type")
 print(f"Remaining households for day-specific analyses: {len(clustering_data_with_daytypes)}")
 
+# Every country and day type (with the household-days of undetermined day
+# type as a third one) must have at least MIN_N_UNFLAGGED household-days or
+# none, since the exports below give the household-days of every country, of
+# every country and day type and of each day type over all countries, from
+# which a smaller one could be derived (audit of November 2026)
+if "COUNTRY" in clustering_data.columns:
+    check_strata(clustering_data.groupby(
+        ["COUNTRY", clustering_data["day_type"].fillna("undetermined")]).size())
+
 # THIRD: Run day type and combined analyses (only on households with day types)
 print("\n" + "="*80)
 print("STEP 3: DAY TYPE AND COMBINED ANALYSES")
@@ -1851,7 +1882,7 @@ if "COUNTRY" in clustering_data.columns:
     for country in countries:
         country_data = clustering_data[clustering_data["COUNTRY"] == country]
         
-        if len(country_data) < 20:
+        if len(country_data) < MIN_N_UNFLAGGED:
             continue
         
         print(f"\nAnalyzing {country} ({len(country_data)} households)...")
@@ -1884,7 +1915,7 @@ print("\n2. Day type time series profiles...")
 plot_daytype_time_series_profiles(clustering_data_with_daytypes, energy_columns, output_dir=DAYTYPE_DIR)
 
 # Clustering for each day type
-if len(working_data) >= 20:
+if len(working_data) >= MIN_N_UNFLAGGED:
     print(f"\nClustering analysis for WORKING DAYS...")
     perform_clustering_analysis(
         data=working_data,
@@ -1894,7 +1925,7 @@ if len(working_data) >= 20:
         cat_features=categorical_features
     )
 
-if len(non_working_data) >= 20:
+if len(non_working_data) >= MIN_N_UNFLAGGED:
     print(f"\nClustering analysis for NON-WORKING DAYS...")
     perform_clustering_analysis(
         data=non_working_data,
@@ -1912,7 +1943,7 @@ print("STEP 4: COUNTRY & DAY TYPE COMBINED ANALYSIS")
 print("="*80)
 print("This is the most granular analysis: clusters specific to each (country, day_type) combination")
 
-combined_results = perform_country_daytype_combined_analysis(clustering_data, min_households=15)
+combined_results = perform_country_daytype_combined_analysis(clustering_data, min_households=MIN_N_UNFLAGGED)
 
 print("\n3. Country time series by day type...")
 plot_country_timeseries_by_daytype(clustering_data_with_daytypes, energy_columns, output_dir=COUNTRY_DAYTYPE_DIR)

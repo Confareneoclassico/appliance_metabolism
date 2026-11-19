@@ -4,7 +4,7 @@ import numpy as np
 import os
 import glob
 from paths import PROCESSED_DIR, COUNTRY_DIR, DAYTYPE_DIR, COUNTRY_DAYTYPE_DIR
-from disclosure import item_class, MIN_N_PUBLISH
+from disclosure import item_class, size_class, MIN_N_PUBLISH, MIN_N_UNFLAGGED
 
 # --- Configuration ---
 # Full list of categorical features identified in the original script
@@ -18,10 +18,13 @@ ENERGY_COLUMNS = [f"Household_Energy_W_{i}" for i in range(144)]
 # variable applies to have no answer, and flagged if more than 20% have none.
 # Non-response is counted among the household-days of the countries that
 # collected the variable, since a variable absent from a country's microdata is
-# not non-response. Job type and contract type apply only to people with a job,
-# and HETUS codes missing and not-applicable answers alike (both become -99), so
-# their non-response cannot be measured and is not assessed.
-NOT_APPLICABLE_ITEMS = {"IND6_1", "IND44"}
+# not non-response. Household-days to which an item does not apply (SUF code
+# -1, recoded to -98 in Stage 04: job items for people without a job, education
+# and main activity for diarists under 15) are left out of both the test and
+# the count. Versions up to 1.0.1 merged them with the missing answers and
+# exempted job and contract type on the mistaken premise that the SUF does not
+# separate the two (audit of November 2026, D5).
+NOT_APPLICABLE, MISSING = -98, -99
 
 # List of files to process: the global solution (Stage 05) and the two
 # day-type solutions (Stage 06)
@@ -71,9 +74,9 @@ def validate_categorical_drivers(df, cat_features, file_name):
         if feature not in df.columns:
             continue
         
-        # Drop rows where the feature value is the missing value indicator (-99)
-        # This is important for Chi-squared validity
-        temp_df = df[df[feature] != -99].copy()
+        # Leave out missing answers (-99) and household-days to which the item
+        # does not apply (-98)
+        temp_df = df[~df[feature].isin([MISSING, NOT_APPLICABLE])].copy()
         
         if len(temp_df) < MIN_N_PUBLISH:
             continue
@@ -87,7 +90,9 @@ def validate_categorical_drivers(df, cat_features, file_name):
             
         # Perform Chi-squared test
         try:
-            chi2, p, dof, expected = chi2_contingency(contingency_table)
+            # No continuity correction: Yates' correction, which scipy applies
+            # to 2x2 tables, would make V inconsistent across tables (L2)
+            chi2, p, dof, expected = chi2_contingency(contingency_table, correction=False)
 
             # Cramer's V effect size, using the same formula as the
             # global-level analysis: V = sqrt(chi2 / (n * min(r-1, c-1)))
@@ -96,13 +101,17 @@ def validate_categorical_drivers(df, cat_features, file_name):
             cramers_v = np.sqrt(chi2 / (n * k)) if n * k > 0 else 0.0
             effect_strength = cramers_v_effect_strength(cramers_v)
 
-            if feature in NOT_APPLICABLE_ITEMS:
-                nonresponse_pct = np.nan
-            else:
-                collected = df['COUNTRY'].isin(temp_df['COUNTRY'].unique()) \
-                    if 'COUNTRY' in df.columns else pd.Series(True, index=df.index)
-                nonresponse_pct = 100 * (1 - len(temp_df) / collected.sum())
+            collected = df['COUNTRY'].isin(temp_df['COUNTRY'].unique()) \
+                if 'COUNTRY' in df.columns else pd.Series(True, index=df.index)
+            applies = collected & (df[feature] != NOT_APPLICABLE)
+            # computed as a ratio of counts, so that a share of exactly 20% or
+            # 50% is not moved across the threshold by rounding
+            nonresponse_pct = 100 * (applies.sum() - len(temp_df)) / applies.sum()
             publication = item_class(int(n), nonresponse_pct)
+            # A test on fewer than MIN_N_UNFLAGGED observations is withheld:
+            # its chi-squared statistic and V together give N = chi2 / (V^2 k)
+            if n < MIN_N_UNFLAGGED:
+                publication = "withheld"
             # The smallest expected count is not exported: with the published
             # totals it would give the size of the smallest cluster, which may
             # be withheld, and of the smallest category. It is only counted.
@@ -123,7 +132,9 @@ def validate_categorical_drivers(df, cat_features, file_name):
                 'Effect_Strength': effect_strength,
                 'N_Clusters': contingency_table.shape[0],
                 'N_Categories': contingency_table.shape[1],
-                'N_Observations': int(n),
+                # Sizes from 20 to 49 are given only as their class (L3)
+                'N_Observations': int(n) if n >= MIN_N_UNFLAGGED else None,
+                'N_Class': size_class(n),
                 'Item_Nonresponse_Pct': nonresponse_pct,
                 'Publication_Class': publication
             })

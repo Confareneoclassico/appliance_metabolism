@@ -13,7 +13,10 @@ EE, EL, ES, FI, FR, HU, IT, LU, NL, NO, PL, RO, RS, UK) are not included. They
 are restricted-access Eurostat Scientific Use Files and must be obtained
 separately and placed in `data/raw/` (or in the folder given by
 `HETUS_DATA_DIR`) before Stage 01 is run. The run of 14 October 2026 used the
-release of November 2020.
+release of November 2020. From version 1.1.0 Stage 01 stops if one of the files
+is missing; `HETUS_COUNTRIES` (for instance `BE,EE,FR`) restricts a run to
+some of the countries, which keep the codes of the full list
+(`pipeline/countries.py`).
 
 The lookup table from activity code to appliance power and to metabolic rate,
 `data/HETUS_mapped_data.csv`, is part of the repository (until version 1.0.1 it
@@ -52,9 +55,9 @@ are named by the two-letter country code, for example
 | 06 | `clustering_country_day.py` | `prepared_clustering_data.csv` | `DayType_Analysis/`, `Country_Analysis/` (one set per country), `Country_DayType_Analysis/`, `Country_Analysis/country_comparison_summary.csv`, `Country_DayType_Analysis/country_daytype_combined_summary.csv`, `Country_DayType_Analysis/{working,non_working}_days_cross_country.csv`, figures |
 | 07 | `statistical_validation.py` | `clustering_results.csv` and every per-stratum file from Stage 06 | `consolidated_anova_stats.csv`, `consolidated_chi2_stats.csv` (with Cramér's V) |
 | 08 | `circular_stats_peak_time.py` | same file set as Stage 07 | `consolidated_circular_stats.csv` (circular mean peak time in clock time, circular standard deviation, and the number of household-days with no demand) |
-| 09 | `same_diarists_coincidence.py` | `lu_data_at_home_with_dominant_activity.csv` | `same_activity_household_summary.csv`, `same_activity_interval_details.csv`, `activity_combination_counts.csv`, `shared_activities_frequency.csv`, figures |
-| 10 | `p_h_counting.py` | `person_daily_metabolic_totals.csv` | `diarists_per_household_summary.csv`, figures |
-| 11 | `visualize_cluster_drivers.py` | per-stratum files from Stage 06 | driver-distribution figures (no CSV) |
+| 09 | `same_diarists_coincidence.py` | `lu_data_at_home_with_dominant_activity.csv` | `same_activity_household_summary.csv` (working file, one row per household-day), `same_activity_by_diarists.csv`, `activity_combination_counts.csv`, `shared_activities_frequency.csv`, figure (Section 3.15) |
+| 10 | `p_h_counting.py` | `person_daily_metabolic_totals.csv` | `diarists_per_household_summary.csv` (one row per household-day), figures |
+| 11 | `visualize_cluster_drivers.py` | per-stratum files from Stage 06, `consolidated_chi2_stats.csv` | driver-distribution figures (no CSV) |
 
 Stages 09 and 10 depend only on Stages 01 to 03 and can run in parallel with
 Stages 04 to 08. They use activity codes and diarist counts only, so the
@@ -81,11 +84,9 @@ global level. The Stage 05 block is retained only because it sits beside the
 PCA and elbow diagnostics, and it could be deleted without affecting the
 manuscript.
 
-Stage 11 hard-codes `TOP_FEATURES = ["HHC5", "HHC1", "INC2", "DDV6"]` instead
-of reading the strongest drivers from Stage 07. The list should be checked
-against the re-run `consolidated_chi2_stats.csv` before new driver figures are
-produced, because `HHC1` and `INC2` were only weakly associated with cluster
-membership in most strata of the previous run.
+Stage 11 hard-coded `TOP_FEATURES = ["HHC5", "HHC1", "INC2", "DDV6"]` instead
+of reading the strongest drivers from Stage 07. From version 1.1.0 it takes
+them from `consolidated_chi2_stats.csv` (Section 3.15, L16).
 
 ## 3. Corrections made to the scripts
 
@@ -422,6 +423,85 @@ its solution in every export, so that sizes can be published exactly, and
 `disclosure.py` will run the two tests above on every file before it is
 written.
 
+### 3.15 Corrections from the audit of November 2026 (version 1.1.0)
+
+The audit of November 2026 numbered the defects that affected the run of
+14 October 2026 D1 to D10 and the latent ones, correct in that run but wrong
+under other inputs or settings, L1 to L17. All are corrected below. Each
+correction has a test on synthetic data in `tests/` (`python -m pytest tests`,
+about 30 seconds). Stages 01 to 04, 09 and 10 also ran on a small synthetic
+set of raw files, and Stages 05 to 08 and 11 on a synthetic prepared dataset
+of 19,227 household-days (one tenth of the real country sizes, whole-watt
+profiles) with a planted cluster of six household-days, and every export of
+that run passed the tests of `disclosure.py`. None of the corrections has been
+run on the microdata yet. The comparison of every output with version 1.0.0
+comes next, and Section 5 will then give the corrected numbers.
+
+| ID | Where | Correction | What changes in the outputs | Test |
+|---|---|---|---|---|
+| D1, D2 | `disclosure.py`, Stages 05, 06, 08, 11, country cluster figure | Every cluster of fewer than 50 household-days is reported together with the largest cluster of its solution in every export and figure (`published_groups`, Option A); exports with group means pass `check_export` before they are written | Small clusters no longer have rows of their own; the row of the largest cluster gives `n_small_clusters_merged`; all published sizes are exact | `test_disclosure.py` |
+| D3 | Stage 09 | Rewritten: a slot is comparable when at least two distinct diarists are at home (`Wherep` = 1) with a valid code, and shared when at least two of them record the same code as main or secondary activity, each diarist counted once per code | Every share of Section 5 that comes from Stage 09 | `test_stage09_sharing.py` |
+| D4 | `peaks.py`, Stages 05, 06, 08 | The weight of a household-day is shared equally among the slots at its daily maximum, and days without demand are left out | Circular means and SDs of peak times, `peak_time_circular_mean` | `test_peaks.py` |
+| D5 | Stages 01, 04, 07, 11 | Not applicable (−1, recoded to −98) is kept apart from refusal, don't know and no answer (−99); non-response is counted among the household-days an item applies to, without the exemption of `IND6_1` and `IND44` | `Item_Nonresponse_Pct` and `Publication_Class` of Stage 07 | `test_stages01_04.py`, `test_stage07.py` |
+| D6 | Stage 06 | Each export records how K was chosen (`k_selection`: knee or fallback), and the stratified export gives K | New columns only | end-to-end run |
+| D7 | Stage 05 | `energy_std` (pooled SD of 10-minute power, W) is replaced by `daily_energy_sd_wh`, the SD of daily energy | `cluster_summary.csv` | end-to-end run |
+| D8 | Stage 11 | No transpose: each bar is a cluster and adds up to 100% | Driver figures | `test_figures_and_drivers.py` |
+| D9 | Stage 03 | Daily totals are added up by household-day after the long file is read in chunks | `household_daily_totals.csv` | `test_stages01_04.py` |
+| D10 | Stage 03 | The household metabolic rate is the sum of the rates of the diarists at home; the co-presence additions are dropped | Metabolic columns only | `test_stages01_04.py` |
+| L1 | `countries.py`, Stages 01, 06 | Country codes from the name of the raw file, and a missing file stops Stage 01 (`HETUS_COUNTRIES` selects a subset) | None in a run with all 16 files | `test_stages01_04.py` |
+| L2 | Stage 07 | `chi2_contingency(..., correction=False)` | V of 2 x 2 tables (none published) | `test_stage07.py` |
+| L3 | Stage 07 | `N_Observations` only from 50 observations, with `N_Class` otherwise; tests on fewer than 50 observations withheld | None published | `test_stage07.py` |
+| L4 | Stage 06 | `mean_profiles_country_daytype.csv` is one set for rounding, its ALL rows included, and passes `check_export` | None while every group has 50 or more | `test_disclosure.py` |
+| L5 | Stage 06 | Every threshold from `disclosure.py`; a country and day type of 1 to 49 household-days stops the stage before anything is written (`check_strata`); every summary writer checks its sizes (`assert_sizes`) | None in HETUS 2010 (smallest stratum 946) | `test_stage06_guard.py` |
+| L6 | Stage 05 | Figure 2 draws the published groups with their exact sizes | None while every global cluster has 50 or more | end-to-end run |
+| L7 | Stage 05 | The elbow plot labels a fallback K as such | Elbow figure | end-to-end run |
+| L8 | Country cluster figure | Eight colours in fixed order, ranks from the ninth in grey, ordinals generated | A country with nine or more clusters no longer fails | `test_figures_and_drivers.py` |
+| L9 | `paths.py`, `run_pipeline.sh` | A relative `HETUS_*` location is taken from the repository root; `run_pipeline.sh` reads all locations from `paths.py` | None with absolute settings | `test_paths.py` |
+| L10 | Stage 01 | A code recorded as main and secondary activity counts once in the per-diarist series | `Diarist_Energy_Demand_Series` (not read later) | `test_stages01_04.py` |
+| L11 | Stage 02 | Metabolic rates are looked up by `activity`, as in Stages 01 and 03 | Dominant activity, so the diagnostic `n_unique_activities_after_dedup` | `test_stages01_04.py` |
+| L12 | Stage 01, this section | `SOCIO_LABELS` corrected (`DDV1` day of the week, `DDV3` month, `DDV6` worked or studied); the quarter recoding and the at-home filter documented below | None | none needed |
+| L13 | `peaks.py`, Stage 08 | Clock times rounded to the minute and reduced modulo 24 h | At most one minute | `test_peaks.py` |
+| L14 | Stages 09, 10 | Diarists counted as distinct persons (`HID`, `PID`) per household-day | Console totals of Stage 10, `diarists_per_household_summary.csv` now per household-day | `test_stage09_sharing.py` |
+| L15 | Stage 06 | A day type without published results is titled by its size class and left out of the count of countries | Figure titles, console | end-to-end run |
+| L16 | Stage 11 | Variables from the Stage 07 ranking (the six largest V of the global solution, `HETUS_DRIVER_TOP_N`) | Choice of driver figures | `test_figures_and_drivers.py` |
+| L17 | Stage 03 | The "deduplication impact" printout and its 61.5% are removed | Console | none needed |
+
+Option A has a cost: the mean profile of the largest group of a solution
+includes its small clusters, so it is not the profile of the largest cluster
+alone. In the synthetic run the six planted night-peak days show as a small
+bump at 02:30 in the profile of the largest Serbian group. The small clusters
+of the run of 14 October 2026 (32 of fewer than 20 household-days and 17 of 20
+to 49, out of 234) will be examined against this when the stratified results
+are compared with version 1.0.0.
+
+Stage 06 publishes the household-days of every country, of every country and
+day type and of each day type over all countries. A country and day type below
+50 could therefore be derived from the others even if its own rows were
+withheld, and suppressing enough further figures to prevent that would remove
+the day-type totals the manuscript quotes. Since the smallest country and day
+type of HETUS 2010 has 946 household-days, Stage 06 instead stops with a
+message naming the stratum, and the country can be left out with
+`HETUS_COUNTRIES`. For the same reason Stage 07 withholds a test on fewer than
+50 observations rather than flagging it, because its chi-squared statistic and
+V together give N.
+
+The number of clusters is unchanged in this version: K is still chosen by
+`KneeLocator` on the grid 2 to 15 with a fallback of 8 for the global solution
+and on 2 to 10 with a fallback of 4 for the stratified ones. Whether to use one
+grid and rule at every level, as the audit recommends, depends on check C3,
+which counts the fallbacks of the run of 14 October 2026, and K enters the
+sensitivity analysis as a factor in any case.
+
+Stage 01, documented here for L12, recodes `DDV3` (month of the diary day) to
+the first month of its quarter (1, 4, 7 and 10), and keeps only the diarist
+records with at least one slot at home (`Wherep` = 1). A diarist away from
+home all day is therefore not in the data, and the first-listed diarist whose
+person-level attributes a household-day takes (Section 4) is the first listed
+among those at home at least once.
+
+The matching of household members to the same diary day (`HID` and `DIARY`,
+open risk of the audit and check C1) is not changed by this version.
+
 ## 4. Design choices that constrain interpretation
 
 Person-level attributes come from the first-listed diarist. Stage 03 sets
@@ -458,8 +538,8 @@ of the run of 11 October 2026.
 | Per-country K, daily energy, peaks and peak times | `country_comparison_summary.csv` | Refreshed (K between 4 and 7) |
 | Country-by-day-type comparison (energy, peak, peak time, K) | `country_daytype_combined_summary.csv` | Refreshed |
 | Recurring profile shapes in the national solutions | `stratified_cluster_mean_profiles.csv` | Checked for all 15 countries (Figure S2). Not published from version 1.0.1 (Section 3.14) |
-| Diarist coincidence percentages | `same_activity_household_summary.csv` | Under revision for version 1.1.0: the shipped Stage 09 counts all 144 slots in the denominator and does not use the location (`CHANGELOG.md`) |
-| Shared activity counts (sleep, TV, eating) | `shared_activities_frequency.csv` | Under revision for version 1.1.0: a code recorded as both main and secondary activity is counted twice (`CHANGELOG.md`) |
+| Diarist coincidence percentages | `same_activity_by_diarists.csv` | Stage 09 rewritten for version 1.1.0 (Section 3.15, D3); the figures of the manuscript, from an unpublished version, will be replaced by those of the run on the microdata |
+| Shared activity counts (sleep, TV, eating) | `shared_activities_frequency.csv`, `activity_combination_counts.csv` | Stage 09 rewritten for version 1.1.0 (Section 3.15, D3): each diarist counted once per code, at home only |
 | Country code mapping, exclusion of Germany | author confirmation | Verified |
 | `INC4_1` categories | Eurostat (pers. comm., 2026) | Eight categories, not the five in the published list |
 | `IND44` meaning | SUF Annex 2 | Permanent or fixed-term contract (employees only, not collected in NO) |

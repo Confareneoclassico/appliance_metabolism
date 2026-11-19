@@ -6,19 +6,14 @@ from pathlib import Path
 import os
 from paths import PROCESSED_DIR, MAPPING_FILE
 
-print("Starting aggregate_household_metrics.py - WITH DEDUPLICATION")
+print("Starting aggregate_household_metrics.py")
 
-# Load mapping for power and MR per activity first
+# Load the appliance power of every activity code. The metabolic rates come
+# with the diarist series of Stage 01, and the rates of co-present members
+# are no longer added (see the metabolic calculation below).
 hetus = pd.read_csv(MAPPING_FILE)
 activity_power = hetus.set_index("activity")["Appliance_Power_Watts"].to_dict()
-mr_maps = {
-    "MR_infant_Watts": hetus.set_index("activity")["MR_infant_Watts"].to_dict(),
-    "MR_child_Watts": hetus.set_index("activity")["MR_child_Watts"].to_dict(),
-    "MR_teenager_Watts": hetus.set_index("activity")["MR_teenager_Watts"].to_dict(),
-    "MR_adult_Watts": hetus.set_index("activity")["MR_adult_Watts"].to_dict(),
-    "MR_senior_Watts": hetus.set_index("activity")["MR_senior_Watts"].to_dict(),
-}
-print("Loaded HETUS_mapped_data and created MR maps.")
+print("Loaded HETUS_mapped_data.")
 
 # Energy and MR conversion: 10-min interval power (W) to energy (Wh) multiply by 10/60
 interval_hours = 10.0/60.0
@@ -110,13 +105,10 @@ def process_household_day(household_day_data):
         has_any_at_home = len(at_home_data) > 0
         
         if has_any_at_home:
-            # ========================================================
-            # CRITICAL STEP: DEDUPLICATION by dominant activity
-            # ========================================================
+            # Distinct dominant activities of the diarists at home, kept as the
+            # diagnostic column n_unique_activities_after_dedup (they no longer
+            # enter the metabolic rate, audit of November 2026, D10)
             at_home_data["Diarist_Dominant_Activity_int"] = at_home_data["Diarist_Dominant_Activity"].fillna(-1).astype(int)
-            
-            # Keep only the FIRST occurrence of each unique dominant activity
-            # This prevents double-counting when multiple diarists report the same activity
             deduplicated_data = at_home_data.drop_duplicates(
                 subset=["Diarist_Dominant_Activity_int"], 
                 keep="first"
@@ -133,37 +125,16 @@ def process_household_day(household_day_data):
             household_energy = sum(activity_power.get(act, 0.0) for act in all_activities)
             
             # ========================================================
-            # Metabolic calculation: Use ONLY DEDUPLICATED data
-            # (Avoid double-counting metabolic rates for same activity)
+            # Metabolic calculation: every diarist at home counts with his or
+            # her own metabolic rate. Versions up to 1.0.1 summed the rates of
+            # the distinct dominant activities only, so three people asleep at
+            # home counted as one, and then added, for each of those
+            # activities, a rate for every kind of co-present household member,
+            # who is often a diarist already counted (audit of November 2026,
+            # D10). Household members who kept no diary are not counted, since
+            # the co-presence flags cannot tell them apart from diarists.
             # ========================================================
-            household_metabolic = deduplicated_data["Diarist_Metabolic_W"].sum(skipna=True)
-            
-            # ========================================================
-            # Co-presence adjustments: Apply ONCE per unique activity
-            # ========================================================
-            copresence_adjustment = 0.0
-            
-            for _, row in deduplicated_data.iterrows():
-                activity = row["Diarist_Dominant_Activity_int"]
-                if activity == -1:  # Skip undefined activities
-                    continue
-                
-                # Apply co-presence adjustments based on this representative diarist
-                if row["Wpartner"] == 1:
-                    copresence_adjustment += mr_maps["MR_adult_Watts"].get(activity, 0)
-                
-                if row["Wchild"] == 1:
-                    if row["HHC4"] > 0:  # Teenager
-                        copresence_adjustment += mr_maps["MR_teenager_Watts"].get(activity, 0)
-                    elif row["HHC3"] > 0:  # Child
-                        copresence_adjustment += mr_maps["MR_child_Watts"].get(activity, 0)
-                    else:  # Unknown age, assume adult
-                        copresence_adjustment += mr_maps["MR_adult_Watts"].get(activity, 0)
-                
-                if row["Wotherh"] == 1:
-                    copresence_adjustment += mr_maps["MR_adult_Watts"].get(activity, 0)
-            
-            household_metabolic += copresence_adjustment
+            household_metabolic = at_home_data["Diarist_Metabolic_W"].sum(skipna=True)
         
         # Store household interval data
         interval_data = {
@@ -322,7 +293,6 @@ missing_countries = set()
 total_long_rows = 0
 total_wide_rows = 0
 total_person_rows = 0
-total_deduplication_reduction = 0  # Track impact of deduplication
 
 for batch_start in range(0, len(household_days), batch_size):
     batch_end = min(batch_start + batch_size, len(household_days))
@@ -333,7 +303,6 @@ for batch_start in range(0, len(household_days), batch_size):
     
     batch_household_intervals = []
     batch_person_metrics = []
-    batch_dedup_stats = []  # Track deduplication impact
     
     for idx, (_, household_day_row) in enumerate(batch_household_days.iterrows()):
         hid = household_day_row["HID"]
@@ -357,15 +326,6 @@ for batch_start in range(0, len(household_days), batch_size):
         household_intervals, person_metrics = process_household_day(household_day_data)
         
         if household_intervals:
-            # Calculate deduplication impact for this household-day
-            total_diarists = sum(interval.get('n_diarists_at_home', 0) for interval in household_intervals)
-            unique_after_dedup = sum(interval.get('n_unique_activities_after_dedup', 0) for interval in household_intervals)
-            
-            if total_diarists > 0:
-                dedup_reduction = 1.0 - (unique_after_dedup / total_diarists)
-                total_deduplication_reduction += dedup_reduction
-                batch_dedup_stats.append(dedup_reduction)
-            
             batch_household_intervals.extend(household_intervals)
         else:
             if country not in missing_countries:
@@ -390,12 +350,6 @@ for batch_start in range(0, len(household_days), batch_size):
         batch_df = pd.DataFrame(batch_household_intervals)
         unique_in_batch = len(batch_df[["HID", "DIARY"]].drop_duplicates())
         total_wide_rows += unique_in_batch
-        
-        # Report deduplication impact for this batch
-        if batch_dedup_stats:
-            avg_dedup = np.mean(batch_dedup_stats) * 100
-            print(f"  Average deduplication reduction this batch: {avg_dedup:.1f}%")
-        
         del batch_df
     
     total_person_rows += len(batch_person_metrics)
@@ -403,48 +357,58 @@ for batch_start in range(0, len(household_days), batch_size):
     print(f"  Completed batch. Wrote {len(batch_household_intervals)} interval rows, {len(batch_person_metrics)} person rows to files")
     
     # Clear batch data from memory
-    del batch_household_intervals, batch_person_metrics, batch_dedup_stats
+    del batch_household_intervals, batch_person_metrics
     gc.collect()
 
 print(f"\nFinal countries processed: {sorted(processed_countries)}")
 print(f"Countries with missing data: {sorted(missing_countries)}")
 
-# Calculate and report overall deduplication impact
-if total_deduplication_reduction > 0:
-    avg_overall_dedup = (total_deduplication_reduction / total_wide_rows) * 100
-    print(f"\nOverall deduplication impact: {avg_overall_dedup:.1f}% reduction in counted activities")
-    print(f"(Based on your earlier analysis showing 61.5% same-activity rate)")
+# Versions up to 1.0.1 printed here an "overall deduplication impact" of the
+# metabolic rule, next to the 61.5% same-activity figure of an unpublished
+# version of Stage 09 (audit of November 2026, L17). Stage 09 now gives the
+# share of shared activities.
+
+def daily_totals_from_long(path, extra_cols, chunk_size=10000):
+    """Daily totals of every household-day from the long file, read in
+    chunks. The sums and slot counts of each chunk are added up by
+    household-day after reading, so a household-day whose 144 rows fall in two
+    chunks is not split in two (audit of November 2026, D9: 10,000 is not a
+    multiple of 144, and versions up to 1.0.1 grouped each chunk on its own)."""
+    parts, keys = [], None
+    for chunk in pd.read_csv(path, chunksize=chunk_size):
+        if keys is None:
+            keys = ["HID", "DIARY"] + [col for col in extra_cols if col in chunk.columns]
+        # Convert to energy (Wh) by multiplying by interval_hours
+        chunk["Household_Energy_Wh"] = chunk["Household_Energy_W"] * interval_hours
+        chunk["Household_Metabolic_Wh"] = chunk["Household_Metabolic_W"] * interval_hours
+        # dropna=False keeps household-days with missing attributes (e.g. DDV7
+        # not asked in a country); the default would silently drop them.
+        parts.append(chunk.groupby(keys, dropna=False).agg(
+            total_energy_Wh=("Household_Energy_Wh", "sum"),
+            total_metabolic_Wh=("Household_Metabolic_Wh", "sum"),
+            sum_diarists_at_home=("n_diarists_at_home", "sum"),
+            sum_unique_activities=("n_unique_activities_after_dedup", "sum"),
+            n_slots=("Interval", "size")))
+    if not parts:
+        return pd.DataFrame()
+    totals = pd.concat(parts).groupby(level=list(range(len(keys))), dropna=False, sort=False).sum()
+    totals["avg_diarists_at_home"] = totals["sum_diarists_at_home"] / totals["n_slots"]
+    totals["avg_unique_activities"] = totals["sum_unique_activities"] / totals["n_slots"]
+    incomplete = int((totals["n_slots"] != 144).sum())
+    if incomplete:
+        print(f"WARNING: {incomplete} household-days do not have 144 slots in the long file")
+    return totals.drop(columns=["sum_diarists_at_home", "sum_unique_activities", "n_slots"]).reset_index()
+
 
 # Create daily totals from the long format file
 print("Creating daily totals from saved data...")
 try:
-    # Read the long format file in chunks to calculate daily totals
-    chunk_size = 10000
-    daily_totals = []
-    
-    for chunk in pd.read_csv(PROCESSED_DIR / "household_interval_timeseries_long.csv", chunksize=chunk_size):
-        available_extra_cols = [col for col in extra_cols if col in chunk.columns]
-        
-        # Convert to energy (Wh) by multiplying by interval_hours
-        chunk["Household_Energy_Wh"] = chunk["Household_Energy_W"] * interval_hours
-        chunk["Household_Metabolic_Wh"] = chunk["Household_Metabolic_W"] * interval_hours
-        
-        # dropna=False keeps household-days with missing attributes (e.g. DDV7
-        # not asked in a country); the default would silently drop them.
-        chunk_daily = chunk.groupby(["HID", "DIARY"] + available_extra_cols, dropna=False).agg(
-            total_energy_Wh=("Household_Energy_Wh", "sum"),
-            total_metabolic_Wh=("Household_Metabolic_Wh", "sum"),
-            avg_diarists_at_home=("n_diarists_at_home", "mean"),
-            avg_unique_activities=("n_unique_activities_after_dedup", "mean")
-        ).reset_index()
-        
-        daily_totals.append(chunk_daily)
-        del chunk_daily
-        gc.collect()
+    all_daily_totals = daily_totals_from_long(
+        PROCESSED_DIR / "household_interval_timeseries_long.csv", extra_cols)
+    daily_totals = [all_daily_totals] if len(all_daily_totals) else []
     
     # Combine all daily totals
     if daily_totals:
-        all_daily_totals = pd.concat(daily_totals, ignore_index=True)
         all_daily_totals.to_csv(PROCESSED_DIR / "household_daily_totals.csv", index=False)
         print(f"Exported {PROCESSED_DIR}/household_daily_totals.csv with {len(all_daily_totals)} rows")
         

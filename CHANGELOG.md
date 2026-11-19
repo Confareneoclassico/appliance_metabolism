@@ -8,6 +8,28 @@ and `pipeline/paths.py` reads it from there (or from `HETUS_MAPPING_FILE`),
 falling back to a copy next to the raw files. The README and `docs/PIPELINE.md`
 no longer describe it as a Eurostat file.
 
+All the defects found by the audit of November 2026 are corrected, each with a
+test on synthetic data in `tests/` (`docs/PIPELINE.md` Section 3.15 lists
+them). Every cluster of fewer than 50 household-days is now reported together
+with the largest cluster of its solution in every export and figure, every
+table of group means is tested before it is written, and Stage 06 stops if a
+country and day type has between 1 and 49 household-days. Stage 09 is
+rewritten: a slot is comparable when at least two distinct diarists are at
+home with a valid activity code, and shared when at least two of them record
+the same code. Peak times share the weight of a household-day among tied
+maxima and leave out days without demand. Not applicable is kept apart from
+non-response, which is counted among the units an item applies to. Stage 06
+records whether each K came from a knee or the fallback. `cluster_summary.csv`
+gives the SD of daily energy (`daily_energy_sd_wh`) instead of `energy_std`.
+The Stage 11 figures are no longer transposed and draw the variables ranked
+first by Stage 07. Stage 03 adds up daily totals by household-day and sums the
+metabolic rate over the diarists at home. Country codes come from the file
+names, and a missing raw file stops Stage 01 (`HETUS_COUNTRIES` selects a
+subset). Relative `HETUS_*` locations are taken from the repository root. The
+smaller corrections are in Section 3.15. The outputs in `outputs/` are still
+those of the run of 14 October 2026 and will be replaced by those of the
+corrected pipeline.
+
 ## 1.0.1 (19 November 2026)
 
 doi:10.5281/zenodo.24368824

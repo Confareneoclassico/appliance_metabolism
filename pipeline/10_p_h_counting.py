@@ -1,5 +1,15 @@
+"""Stage 10: number of diarists per household-day (console and figures).
+
+Diarists are counted as distinct persons (HID, PID) within each household-day
+(HID, DIARY). Versions up to 1.0.1 counted PID without HID, although PID is
+the person number within the household (BE_1 is the first person of every
+Belgian household), and counted the diarists of a household over both diary
+days (audit of November 2026, L14).
+"""
 import pandas as pd
 import numpy as np
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import seaborn as sns
 from collections import Counter
@@ -11,16 +21,18 @@ df = pd.read_csv(PROCESSED_DIR / 'person_daily_metabolic_totals.csv')
 print("Data loaded successfully!")
 print(f"Total rows: {len(df)}")
 print(f"Total unique households (HID): {df['HID'].nunique()}")
-print(f"Total unique diarists (PID): {df['PID'].nunique()}")
+print(f"Total unique diarists (HID, PID): {len(df[['HID', 'PID']].drop_duplicates())}")
+print(f"Total household-days (HID, DIARY): {len(df[['HID', 'DIARY']].drop_duplicates())}")
 
-# Count diarists per household
+# Count diarists per household-day
 print("\n" + "="*60)
-print("DIARISTS PER HOUSEHOLD ANALYSIS")
+print("DIARISTS PER HOUSEHOLD-DAY ANALYSIS")
 print("="*60)
 
-# Count unique diarists (PID) per household (HID)
-diarists_per_household = df.groupby('HID')['PID'].nunique().reset_index()
-diarists_per_household.columns = ['HID', 'n_diarists']
+# Distinct persons per household-day (within a household, PID identifies the
+# person)
+diarists_per_household = df.groupby(['HID', 'DIARY'])['PID'].nunique().reset_index()
+diarists_per_household.columns = ['HID', 'DIARY', 'n_diarists']
 
 # Extract country from HID
 diarists_per_household['country'] = diarists_per_household['HID'].apply(
@@ -29,9 +41,9 @@ diarists_per_household['country'] = diarists_per_household['HID'].apply(
 
 # Basic statistics
 print(f"\nBASIC STATISTICS:")
-print(f"Total households: {len(diarists_per_household)}")
-print(f"Mean diarists per household: {diarists_per_household['n_diarists'].mean():.2f}")
-print(f"Median diarists per household: {diarists_per_household['n_diarists'].median():.2f}")
+print(f"Total household-days: {len(diarists_per_household)}")
+print(f"Mean diarists per household-day: {diarists_per_household['n_diarists'].mean():.2f}")
+print(f"Median diarists per household-day: {diarists_per_household['n_diarists'].median():.2f}")
 print(f"Standard deviation: {diarists_per_household['n_diarists'].std():.2f}")
 print(f"Minimum diarists: {diarists_per_household['n_diarists'].min()}")
 print(f"Maximum diarists: {diarists_per_household['n_diarists'].max()}")
@@ -41,7 +53,7 @@ distribution = diarists_per_household['n_diarists'].value_counts().sort_index()
 print(f"\nDISTRIBUTION BREAKDOWN:")
 for n_diarists, count in distribution.items():
     percentage = (count / len(diarists_per_household)) * 100
-    print(f"  {n_diarists} diarist(s): {count} households ({percentage:.1f}%)")
+    print(f"  {n_diarists} diarist(s): {count} household-days ({percentage:.1f}%)")
 
 # Country-level analysis
 print(f"\nCOUNTRY-LEVEL ANALYSIS:")
@@ -62,15 +74,15 @@ sns.set_palette("husl")
 
 # Create a 2x2 subplot layout
 fig, axes = plt.subplots(2, 2, figsize=(15, 12))
-fig.suptitle('Distribution of Diarists per Household', fontsize=16, fontweight='bold')
+fig.suptitle('Distribution of Diarists per Household-Day', fontsize=16, fontweight='bold')
 
 # Plot 1: Histogram of diarists per household
 counts, bins, patches = axes[0, 0].hist(diarists_per_household['n_diarists'], 
                                        bins=range(1, diarists_per_household['n_diarists'].max() + 2),
                                        edgecolor='black', alpha=0.7, align='left')
-axes[0, 0].set_xlabel('Number of Diarists per Household')
-axes[0, 0].set_ylabel('Number of Households')
-axes[0, 0].set_title('Histogram: Diarists per Household')
+axes[0, 0].set_xlabel('Number of Diarists per Household-Day')
+axes[0, 0].set_ylabel('Number of Household-Days')
+axes[0, 0].set_title('Histogram: Diarists per Household-Day')
 axes[0, 0].grid(True, alpha=0.3)
 
 # Add value labels on bars
@@ -92,19 +104,19 @@ country_data['country_plot'] = country_data['country'].apply(
 sns.boxplot(data=country_data, x='country_plot', y='n_diarists', ax=axes[0, 1])
 axes[0, 1].set_xlabel('Country')
 axes[0, 1].set_ylabel('Number of Diarists')
-axes[0, 1].set_title('Box Plot: Diarists per Household by Country')
+axes[0, 1].set_title('Box Plot: Diarists per Household-Day by Country')
 axes[0, 1].tick_params(axis='x', rotation=45)
 
 # Plot 3: Pie chart of distribution
 dist_counts = diarists_per_household['n_diarists'].value_counts().sort_index()
 axes[1, 0].pie(dist_counts.values, labels=dist_counts.index, autopct='%1.1f%%', startangle=90)
-axes[1, 0].set_title('Pie Chart: Distribution of Diarists per Household')
+axes[1, 0].set_title('Pie Chart: Distribution of Diarists per Household-Day')
 
 # Plot 4: Cumulative distribution
 sorted_counts = np.sort(diarists_per_household['n_diarists'])
 y_vals = np.arange(1, len(sorted_counts) + 1) / len(sorted_counts)
 axes[1, 1].plot(sorted_counts, y_vals, marker='.', linestyle='-', linewidth=2)
-axes[1, 1].set_xlabel('Number of Diarists per Household')
+axes[1, 1].set_xlabel('Number of Diarists per Household-Day')
 axes[1, 1].set_ylabel('Cumulative Proportion')
 axes[1, 1].set_title('Cumulative Distribution Function')
 axes[1, 1].grid(True, alpha=0.3)
@@ -121,9 +133,9 @@ plt.figure(figsize=(12, 8))
 dist_pct = (diarists_per_household['n_diarists'].value_counts().sort_index() / len(diarists_per_household) * 100)
 bars = plt.bar(dist_pct.index, dist_pct.values, color='skyblue', edgecolor='black', alpha=0.7)
 
-plt.xlabel('Number of Diarists per Household', fontsize=12)
-plt.ylabel('Percentage of Households (%)', fontsize=12)
-plt.title('Detailed Distribution: Diarists per Household', fontsize=14, fontweight='bold')
+plt.xlabel('Number of Diarists per Household-Day', fontsize=12)
+plt.ylabel('Percentage of Household-Days (%)', fontsize=12)
+plt.title('Detailed Distribution: Diarists per Household-Day', fontsize=14, fontweight='bold')
 plt.grid(True, alpha=0.3, axis='y')
 
 # Add value labels on bars
@@ -138,7 +150,7 @@ plt.show()
 # Create summary table for display
 summary_table = pd.DataFrame({
     'Number of Diarists': distribution.index,
-    'Household Count': distribution.values,
+    'Household-Day Count': distribution.values,
     'Percentage': (distribution.values / len(diarists_per_household) * 100).round(1)
 })
 
@@ -156,17 +168,17 @@ print("="*50)
 most_common = distribution.idxmax()
 most_common_count = distribution.max()
 most_common_pct = (most_common_count / len(diarists_per_household)) * 100
-print(f"Most common household size: {most_common} diarist(s) ({most_common_pct:.1f}% of households)")
+print(f"Most common number of diarists: {most_common} ({most_common_pct:.1f}% of household-days)")
 
 # Single diarist households
 single_diarist = distribution.get(1, 0)
 single_pct = (single_diarist / len(diarists_per_household)) * 100
-print(f"Single-diarist households: {single_diarist} ({single_pct:.1f}%)")
+print(f"Single-diarist household-days: {single_diarist} ({single_pct:.1f}%)")
 
 # Multi-diarist households (2+)
 multi_diarist = len(diarists_per_household) - single_diarist
 multi_pct = (multi_diarist / len(diarists_per_household)) * 100
-print(f"Multi-diarist households (2+): {multi_diarist} ({multi_pct:.1f}%)")
+print(f"Multi-diarist household-days (2+): {multi_diarist} ({multi_pct:.1f}%)")
 
 # Save the diarists per household data to CSV
 diarists_per_household.to_csv(PROCESSED_DIR / 'diarists_per_household_summary.csv', index=False)

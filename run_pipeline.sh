@@ -14,8 +14,13 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PIPELINE_DIR="${REPO_ROOT}/pipeline"
-RAW_DIR="${HETUS_DATA_DIR:-${REPO_ROOT}/data/raw}"
-export HETUS_DATA_DIR="${RAW_DIR}"
+
+# Locations as the stages see them (pipeline/paths.py resolves a relative
+# HETUS_* value against the repository root)
+location () { (cd "${PIPELINE_DIR}" && python3 -c "import paths; print(paths.$1)"); }
+RAW_DIR="$(location RAW_DIR)"
+PROCESSED="$(location PROCESSED_DIR)"
+MAPPING_FILE="$(location MAPPING_FILE)"
 
 echo "============================================================"
 echo "HETUS pipeline, raw data in: ${RAW_DIR}"
@@ -25,9 +30,7 @@ echo "============================================================"
 # start from existing intermediate outputs (for example START_STAGE=5 reuses
 # processed/prepared_clustering_data.csv and re-runs the clustering).
 START_STAGE="${START_STAGE:-1}"
-PROCESSED="${HETUS_PROCESSED_DIR:-${REPO_ROOT}/processed}"
 
-MAPPING_FILE="$(cd "${PIPELINE_DIR}" && python3 -c 'import paths; print(paths.MAPPING_FILE)')"
 if (( START_STAGE <= 3 )) && [[ ! -f "${MAPPING_FILE}" ]]; then
   echo "ERROR: HETUS_mapped_data.csv not found (${MAPPING_FILE})."
   echo "It is part of the repository, in data/ (see README.md)."

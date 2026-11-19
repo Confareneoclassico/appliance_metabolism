@@ -38,13 +38,21 @@ energy_columns = [col for col in household_timeseries_df.columns if col.startswi
 # Combine energy time series, categorical features and auxiliary columns
 clustering_data = household_timeseries_df[energy_columns + categorical_cols + auxiliary_cols].copy()
 
-# Handle missing values in categorical and auxiliary columns
+# Missing values and negative codes. The SUF code -1 (not applicable) becomes
+# NOT_APPLICABLE (-98) and every other negative code or empty cell MISSING
+# (-99), so that Stage 07 can count item non-response among the units an item
+# applies to (audit of November 2026, D5). Both are left out of the tests.
+NOT_APPLICABLE, MISSING = -98, -99
 for col in categorical_cols + auxiliary_cols:
-    # Fill missing values
-    if clustering_data[col].isnull().any():
-        clustering_data[col] = clustering_data[col].fillna(-99)
-    # Replace negative values
-    clustering_data.loc[clustering_data[col].apply(lambda x: isinstance(x, (int, float)) and x < 0), col] = -99
+    x = pd.to_numeric(clustering_data[col], errors="coerce")
+    if x.notna().sum() < clustering_data[col].notna().sum():
+        # non-numeric codes: only empty cells are recoded
+        clustering_data[col] = clustering_data[col].fillna(MISSING)
+        continue
+    not_applicable = x == -1
+    missing = x.isna() | ((x < 0) & ~not_applicable)
+    x = x.mask(not_applicable, NOT_APPLICABLE).mask(missing, MISSING)
+    clustering_data[col] = x
 
 
 # Convert categorical and auxiliary columns to appropriate types
