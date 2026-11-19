@@ -1,0 +1,109 @@
+﻿activity,activity_name,TUS_activity_code,TUS_activity_label,MET_info,Mapping,Appliance_Power_Watts,MR_infant_Watts,MR_child_Watts,MR_teenager_Watts,MR_adult_Watts,MR_senior_Watts,Light_use,Water_use
+11,Sleep,110,Sleep,Sleeping,1,0,29.69137872,50.83567032,72.18903813,74.33426583,66.93086244,0,0
+12,Sick in bed,120,Sleep: Sick in bed,"Lying quietly in bed, awake",0,0,38.17462979,65.36014756,92.8144776,95.5726275,86.05396599,0,0
+21,Eating,210,Eating,Eating (sitting),0,0,63.62438298,108.9335793,154.690796,159.2877125,143.4232767,1,0
+31,Washing and dressing,310,Other personal care: Wash and dress,"Showering, towelling off (standing)",0,5,169.6650213,290.4895447,412.5087893,424.7672333,382.4620711,1,1
+39,Other or unspecified personal care ,390,Other personal care: Other specified personal care,"Dressing, undressing",0,5,106.0406383,181.5559654,257.8179933,265.4795208,239.0387944,1,0
+111,Working time in main and second job (Including coffee breaks and travel at work) ,1110,Main job: Working time in main job,"Sitting, light office work, in general",0,0,63.62438298,108.9335793,154.690796,159.2877125,143.4232767,1,0
+121,Lunch break,1310,Activities related to employment: Lunch break,Eating (sitting),2,0,63.62438298,108.9335793,154.690796,159.2877125,143.4232767,0,0
+129,Other or unspecified activities related to employment ,1399,Activities related to employment: Other unspecified activities related to employment,"Sitting, light office work, in general",2,0,63.62438298,108.9335793,154.690796,159.2877125,143.4232767,1,0
+200,Unspecified study ,2000,Study: Unspecified study school or university,"Sitting, studying, general",0,0,76.34925958,130.7202951,185.6289552,191.145255,172.107932,1,0
+211,Classes and lectures ,2110,Study: Classes and lectures,"Sitting, in class, including note-taking",0,0,76.34925958,130.7202951,185.6289552,191.145255,172.107932,1,0
+212,Homework,2120,Study: Homework,"Sitting, studying, general",0,0,76.34925958,130.7202951,185.6289552,191.145255,172.107932,1,0
+221,Free time study ,2210,Free time study,"Sitting, studying, general",0,0,76.34925958,130.7202951,185.6289552,191.145255,172.107932,1,0
+300,Unspecified household and family care,3000,Unspecified household and family care,"Cleaning, general",0,0,148.4568936,254.1783516,360.9451907,371.6713292,334.6543122,1,0
+311,"Food preparation, baking and preserving ",3110,Food preparation and baking,Cooking or food preparation,0,810,106.0406383,181.5559654,257.8179933,265.4795208,239.0387944,1,0
+312,Dish washing,3130,Dish washing,"Washing dishes, standing",2,0,97.55738724,167.0314882,237.1925539,244.2411592,219.9156909,1,1
+321,Cleaning dwelling,3210,Cleaning dwelling,"Cleaning, general",0,620,148.4568936,254.1783516,360.9451907,371.6713292,334.6543122,1,0
+322,Cleaning garden,3220,Cleaning yard,"Sweeping garage, sidewalk or outside of house",0,0,169.6650213,290.4895447,412.5087893,424.7672333,382.4620711,0,0
+323,Heating and water,3230,Heating and water,Cooking or food preparation,0,0,106.0406383,181.5559654,257.8179933,265.4795208,239.0387944,1,0
+324,Arranging household goods and materials ,3240,Arranging household goods and materials,Putting away household items,0,0,127.248766,217.8671585,309.381592,318.575425,286.8465533,1,0
+329,Other or unspecified household upkeep ,3290,Other or unspecified household upkeep,"Cleaning, general",0,5,148.4568936,254.1783516,360.9451907,371.6713292,334.6543122,1,0
+331,Laundry,3310,Laundry,"Laundry, fold or hang, put clothes in washer or dryer",0,530,97.55738724,167.0314882,237.1925539,244.2411592,219.9156909,1,0
+332,Ironing,3320,Ironing,Ironing,0,2800,97.55738724,167.0314882,237.1925539,244.2411592,219.9156909,1,0
+333,Handicraft and producing textiles,3330,Handicraft and producing textiles,"Sitting, knitting, sewing",0,5,63.62438298,108.9335793,154.690796,159.2877125,143.4232767,1,0
+339,Other or unspecified making and care for textiles ,3390,Other specified making and care for textiles,"Sitting, knitting, sewing",0,0,63.62438298,108.9335793,154.690796,159.2877125,143.4232767,1,0
+341,Gardening,3410,Gardening,"Gardening, general",0,0,212.0812766,363.1119309,515.6359867,530.9590417,478.0775889,0,0
+342,Tending domestic animals,3420,Tending domestic animals,"Child care, standing",0,0,148.4568936,254.1783516,360.9451907,371.6713292,334.6543122,1,0
+343,Caring for pets,3430,Caring for pets,"Sitting, playing with children, light",0,0,106.0406383,181.5559654,257.8179933,265.4795208,239.0387944,0,0
+344,Walking the dog,3440,Walking the dog,"Walking for pleasure, work break, walking the dog",0,0,148.4568936,254.1783516,360.9451907,371.6713292,334.6543122,0,0
+349,Other or unspecified gardening and pet care ,3490,Other specified gardening and pet care,"Gardening, general",0,0,212.0812766,363.1119309,515.6359867,530.9590417,478.0775889,0,0
+351,House construction and renovation,3510,House construction and renovation,"Painting, papering, plastering, remodelling",0,5,190.8731489,326.8007378,464.072388,477.8631375,430.26983,0,0
+352,Repairs of dwelling,3520,Repairs of dwelling,"Wiring, plumbing",0,5,127.248766,217.8671585,309.381592,318.575425,286.8465533,1,0
+353,"Making, repairing and maintaining equipment ",3530,Making repairing and maintaining equipment,"Wiring, plumbing",1,5,127.248766,217.8671585,309.381592,318.575425,286.8465533,1,0
+354,Vehicle maintenance,3540,Vehicle maintenance,Automobile repair,0,0,127.248766,217.8671585,309.381592,318.575425,286.8465533,1,0
+359,Other or unspecified construction and repairs ,3590,Other specified construction and repairs,"Painting, papering, plastering, remodelling",0,5,190.8731489,326.8007378,464.072388,477.8631375,430.26983,0,0
+361,Shopping,3611,Shopping mainly for food,"Food shopping, with grocery cart",1,0,148.4568936,254.1783516,360.9451907,371.6713292,334.6543122,1,0
+362,Commercial and administrative services,3620,Commercial and administrative services,"Walking, shopping (non-grocery shopping)",0,0,97.55738724,167.0314882,237.1925539,244.2411592,219.9156909,1,0
+363,Personal services,3630,Personal services,Standing quietly,0,5,50.89950638,87.14686341,123.7526368,127.43017,114.7386213,1,0
+369,Other or unspecified shopping and services ,3690,Other specified shopping and services,"Walking, shopping (non-grocery shopping)",0,0,97.55738724,167.0314882,237.1925539,244.2411592,219.9156909,1,0
+371,Household management,3710,Household management not using the internet,"Cleaning, general",0,70,148.4568936,254.1783516,360.9451907,371.6713292,334.6543122,1,0
+381,Physical care and supervision ,3810,Unspecified physical care & supervision of a child,"Child care, standing",1,0,148.4568936,254.1783516,360.9451907,371.6713292,334.6543122,1,0
+382,Teaching the child,3820,Teaching the child,"Child care, standing",0,0,148.4568936,254.1783516,360.9451907,371.6713292,334.6543122,1,0
+383,"Reading, playing and talking with child ",3830,Reading playing and talking with child,"Sitting, playing with children, light",0,0,106.0406383,181.5559654,257.8179933,265.4795208,239.0387944,1,0
+384,Accompanying child,3840,Accompanying child,Walking on level surface (4.3 km h-1),0,0,110.2822638,188.8182041,268.1307131,276.0987017,248.6003462,1,0
+389,Other or unspecified childcare,3890,Other or unspecified childcare,"Child care, standing",0,0,148.4568936,254.1783516,360.9451907,371.6713292,334.6543122,1,0
+391,Physical care of a dependent adult household member ,3921,Physical care of a dependent adult household member e.g. Alzheimic parent,"Child care, standing","2,1",0,148.4568936,254.1783516,360.9451907,371.6713292,334.6543122,1,0
+392,Other help of a dependent adult household member ,3929,Other specified help to a dependent adult household member,"Cleaning, general","2,1",0,148.4568936,254.1783516,360.9451907,371.6713292,334.6543122,1,0
+399,Help to a non dependent adult household member ,3919,Other specified help to a non-dependent adult household member,"Cleaning, general","2,1",0,148.4568936,254.1783516,360.9451907,371.6713292,334.6543122,1,0
+411,Organisational work (work for or through an organisation) ,4110,Work for an organisation,"Sitting, light office work, in general",0,0,63.62438298,108.9335793,154.690796,159.2877125,143.4232767,1,0
+421,Construction and repairs as help,4240,Construction and repairs as help to other households,"Painting, papering, plastering, remodelling",2,5,190.8731489,326.8007378,464.072388,477.8631375,430.26983,0,0
+422,Help in employment and farming,4260,Help to other households in employment and farming,"Cleaning, general",2,5,148.4568936,254.1783516,360.9451907,371.6713292,334.6543122,1,0
+423,Care of own children living in another household,4275,Physical care and supervision of own child as help to other household,"Child care, standing",2,0,148.4568936,254.1783516,360.9451907,371.6713292,334.6543122,1,0
+424,Other childcare as help to another household,4271,Physical care and supervision of child as help to other household,"Child care, standing",2,5,148.4568936,254.1783516,360.9451907,371.6713292,334.6543122,1,0
+425,Help to an adult of another household,4280,Unspecified help to an adult of another household,"Cleaning, general",2,0,148.4568936,254.1783516,360.9451907,371.6713292,334.6543122,1,0
+429,Other or unspecified informal help to another household ,4289,Other specified informal help to another household,"Cleaning, general",2,0,148.4568936,254.1783516,360.9451907,371.6713292,334.6543122,1,0
+431,Meetings,4310,Meetings,"Sitting, meetings, general, and/or with talking",0,0,63.62438298,108.9335793,154.690796,159.2877125,143.4232767,1,0
+432,Religious activities,4320,Religious activities,"Sitting, reading book, newspaper",0,0,55.14113192,94.40910203,134.0653565,138.0493508,124.3001731,1,0
+439,Other or unspecified participatory activities ,4390,Other specified participatory activities,"Sitting, card playing, board games",0,0,63.62438298,108.9335793,154.690796,159.2877125,143.4232767,1,0
+511,Socialising with family,5110,Socialising with family,"Sitting, card playing, board games",0,0,63.62438298,108.9335793,154.690796,159.2877125,143.4232767,1,0
+512,Visiting and receiving visitors ,5120,Visiting and receiving visitors,"Sitting, card playing, board games",0,0,63.62438298,108.9335793,154.690796,159.2877125,143.4232767,1,0
+513,Celebrations,5130,Celebrations,"Dancing, general",0,5,190.8731489,326.8007378,464.072388,477.8631375,430.26983,1,0
+514,Telephone conversation ,5140,Telephone conversation,"Sitting, writing, desk work",0,5,76.34925958,130.7202951,185.6289552,191.145255,172.107932,1,0
+519,Other or unspecified social life ,5190,Other specified social life,"Dancing, social",0,0,144.2152681,246.916113,350.6324709,361.0521483,325.0927604,1,0
+521,Cinema,5210,Cinema,Sitting quietly,0,0,42.41625532,72.62238617,103.1271973,106.1918083,95.61551777,0,0
+522,Theatre and concerts,5229,Other specified theatre or concerts,Sitting quietly,1,0,42.41625532,72.62238617,103.1271973,106.1918083,95.61551777,1,0
+523,Art exhibitions and museums,5230,Art exhibitions and museums,"Walking, strolling (less than 2 mph), very slow",0,0,84.83251064,145.2447723,206.2543947,212.3836167,191.2310355,1,0
+524,Library,5240,Unspecified library,"Standing, shopping (non-grocery shopping)",1,0,84.83251064,145.2447723,206.2543947,212.3836167,191.2310355,1,0
+525,Sports events,5250,Sports events,Standing quietly,0,0,50.89950638,87.14686341,123.7526368,127.43017,114.7386213,1,0
+529,Other or unspecified entertainment and culture ,5299,Other or unspecified entertainment or culture,Sitting quietly,1,5,42.41625532,72.62238617,103.1271973,106.1918083,95.61551777,1,0
+531,Resting - time out ,5310,Resting - Time out,"Lying quietly, reclining, watching television",0,0,38.17462979,65.36014756,92.8144776,95.5726275,86.05396599,0,0
+611,Walking and hiking ,6110,Walking and hiking,"Hiking, cross country",1,0,254.4975319,435.734317,618.763184,637.15085,573.6931066,0,0
+612,Jogging and running ,6120,Jogging and running,"Jogging, general",0,0,296.9137872,508.3567032,721.8903813,743.3426583,669.3086244,0,0
+613,"Cycling, skiing and skating ",6130,Biking skiing and skating,"Skiing, general",1,0,296.9137872,508.3567032,721.8903813,743.3426583,669.3086244,0,0
+614,Ball games,6149,Other specified ball games,"Soccer, casual, general",1,0,296.9137872,508.3567032,721.8903813,743.3426583,669.3086244,1,0
+615,Gymnastics and fitness ,6150,Gymnastics,"Gymnastics, general",0,0,169.6650213,290.4895447,412.5087893,424.7672333,382.4620711,1,0
+616,Water sports,6171,Swimming,"Swimming, leisurely",2,0,254.4975319,435.734317,618.763184,637.15085,573.6931066,1,0
+619,Other or unspecified sports or outdoor activities ,6190,Other specified physical exercise,Conditioning exercise,0,5,212.0812766,363.1119309,515.6359867,530.9590417,478.0775889,1,0
+621,"Productive exercise (e.g. hunting, fishing, picking berries, mushrooms or herbs) ",6210,Hunting and fishing,"Fishing, hunting, general",0,0,169.6650213,290.4895447,412.5087893,424.7672333,382.4620711,0,0
+631,Sports related activities ,6311,Activities related to sports,Conditioning exercise,1,0,212.0812766,363.1119309,515.6359867,530.9590417,478.0775889,1,0
+711,"Arts (visual, performing , literary) ",7119,Other specified visual arts,"Standing, drawing, writing, casino gambling",1,0,84.83251064,145.2447723,206.2543947,212.3836167,191.2310355,1,0
+712,Collecting,7160,Collecting,"Sitting, writing, desk work",2,0,76.34925958,130.7202951,185.6289552,191.145255,172.107932,1,0
+713,Correspondence,7170,Correspondence,"Typing, computer",2,0,63.62438298,108.9335793,154.690796,159.2877125,143.4232767,1,0
+719,Other or unspecified hobbies ,7190,Other specified or unspecified arts and hobbies,"Standing, drawing, writing, casino gambling",0,5,84.83251064,145.2447723,206.2543947,212.3836167,191.2310355,1,0
+721,Computing & programming ,7220,Computing - programming,"Typing, computer",2,201,63.62438298,108.9335793,154.690796,159.2877125,143.4232767,1,0
+722,Information by computing ,7230,Unspecified information by computing,"Typing, computer","2,1",201,63.62438298,108.9335793,154.690796,159.2877125,143.4232767,1,0
+723,Communication by computing ,7249,Other specified communication by computing,"Typing, computer","2,1",201,63.62438298,108.9335793,154.690796,159.2877125,143.4232767,1,0
+729,Other or unspecified computing ,7250,Unspecified other computing,"Typing, computer","2,1",201,63.62438298,108.9335793,154.690796,159.2877125,143.4232767,1,0
+731,"Solo games and play, gambling ",7310,Solo games and play,"Sitting, card playing, board games",0,0,63.62438298,108.9335793,154.690796,159.2877125,143.4232767,1,0
+732,Parlour games and play ,7329,Other specified parlour games and play,"Sitting, card playing, board games",1,5,63.62438298,108.9335793,154.690796,159.2877125,143.4232767,1,0
+733,Computer games,7330,Computer games,"Typing, computer",0,210,63.62438298,108.9335793,154.690796,159.2877125,143.4232767,1,0
+739,Other or unspecified games ,7390,Other specified games,"Sitting, card playing, board games",0,0,63.62438298,108.9335793,154.690796,159.2877125,143.4232767,1,0
+811,Reading periodicals ,8110,Reading periodicals,"Sitting, reading book, newspaper",0,0,55.14113192,94.40910203,134.0653565,138.0493508,124.3001731,1,0
+812,Reading books,8120,Reading books,"Sitting, reading book, newspaper",0,0,55.14113192,94.40910203,134.0653565,138.0493508,124.3001731,1,0
+819,Other or unspecified reading ,8190,Other specified reading,"Sitting, reading book, newspaper",0,0,55.14113192,94.40910203,134.0653565,138.0493508,124.3001731,1,0
+821,"Watching TV, video or DVD ",8210,Unspecified TV video or DVD watching,"Lying quietly, reclining, watching television",1,71,38.17462979,65.36014756,92.8144776,95.5726275,86.05396599,1,0
+831,Listening to radio or recordings ,8311,Listening to music on the radio,Sitting quietly,1,5,42.41625532,72.62238617,103.1271973,106.1918083,95.61551777,1,0
+900,Other or unspecified travel purpose ,9000,Travel related to unspecified time use,"Automobile, driving",0,0,84.83251064,145.2447723,206.2543947,212.3836167,191.2310355,0,0
+910,Travel to/from work ,9100,Travel to/from work,"Automobile, driving",0,0,84.83251064,145.2447723,206.2543947,212.3836167,191.2310355,0,0
+920,Travel related to study ,9210,Travel related to education,"Automobile, driving",2,0,84.83251064,145.2447723,206.2543947,212.3836167,191.2310355,0,0
+936,Travel related to shopping and services ,9360,Travel related to shopping,"Automobile, driving",0,0,84.83251064,145.2447723,206.2543947,212.3836167,191.2310355,0,0
+938,Travel related to childcare,9380,Travel escorting a child other than education,"Automobile, driving",0,0,84.83251064,145.2447723,206.2543947,212.3836167,191.2310355,0,0
+939,Travel related to other household care ,9390,Travel escorting an adult other than education,"Automobile, driving",0,0,84.83251064,145.2447723,206.2543947,212.3836167,191.2310355,0,0
+940,Travel related to volunteer work and meetings ,9400,Travel related to organisational work,"Automobile, driving",0,0,84.83251064,145.2447723,206.2543947,212.3836167,191.2310355,0,0
+950,Travel related to social life ,9500,Travel to visit friends/relatives in their homes not respondents household,"Automobile, driving",0,0,84.83251064,145.2447723,206.2543947,212.3836167,191.2310355,0,0
+960,Travel related to other leisure ,9600,Travel related to other leisure,"Automobile, driving",0,0,84.83251064,145.2447723,206.2543947,212.3836167,191.2310355,0,0
+980,Travel related to changing locality ,9800,Travel related to changing locality,"Automobile, driving",0,0,84.83251064,145.2447723,206.2543947,212.3836167,191.2310355,0,0
+995,Filling in the time use diary ,9950,Filling in the time use diary,"Sitting, writing, desk work",0,0,76.34925958,130.7202951,185.6289552,191.145255,172.107932,1,0
+998,Unspecified leisure time ,9980,Unspecified time use,Sitting quietly,2,0,42.41625532,72.62238617,103.1271973,106.1918083,95.61551777,1,0
+999,Other unspecified time use ,9990,Unspecified time use,Sitting quietly,0,0,42.41625532,72.62238617,103.1271973,106.1918083,95.61551777,1,0

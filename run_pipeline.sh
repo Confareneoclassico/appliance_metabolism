@@ -27,9 +27,10 @@ echo "============================================================"
 START_STAGE="${START_STAGE:-1}"
 PROCESSED="${HETUS_PROCESSED_DIR:-${REPO_ROOT}/processed}"
 
-if (( START_STAGE <= 3 )) && [[ ! -f "${RAW_DIR}/HETUS_mapped_data.csv" ]]; then
-  echo "ERROR: HETUS_mapped_data.csv not found in ${RAW_DIR}."
-  echo "Place it there, next to the country files, before running (see README.md)."
+MAPPING_FILE="$(cd "${PIPELINE_DIR}" && python3 -c 'import paths; print(paths.MAPPING_FILE)')"
+if (( START_STAGE <= 3 )) && [[ ! -f "${MAPPING_FILE}" ]]; then
+  echo "ERROR: HETUS_mapped_data.csv not found (${MAPPING_FILE})."
+  echo "It is part of the repository, in data/ (see README.md)."
   exit 1
 fi
 if (( START_STAGE == 5 )) && [[ ! -f "${PROCESSED}/prepared_clustering_data.csv" ]]; then

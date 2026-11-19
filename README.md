@@ -15,11 +15,10 @@ methodology.
 ## Quick start
 
 ```bash
-# 1. Place the raw HETUS country files and the appliance mapping table in
-#    data/raw/ (not included here, see "Inputs" below)
+# 1. Place the raw HETUS country files in data/raw/ (not included here, see
+#    "Inputs" below); the appliance mapping table is in data/
 mkdir -p data/raw
 cp /path/to/HETUS/{BE,DE,EE,EL,ES,FI,FR,HU,IT,LU,NL,NO,PL,RO,RS,UK}.csv data/raw/
-cp /path/to/HETUS_mapped_data.csv data/raw/
 
 # 2. Install dependencies
 pip install -r requirements.txt
@@ -101,6 +100,8 @@ corrections listed in `docs/PIPELINE.md` Section 3.
 │                              (run of 14 October 2026, no microdata,
 │                              under Eurostat's publication rules, with
 │                              the withdrawals of version 1.0.1)
+├── data/HETUS_mapped_data.csv Lookup table from activity to appliance power
+│                              and metabolic rate
 ├── data/raw/                  Raw inputs (not tracked)
 ├── processed/                 Intermediate and output CSVs (not tracked)
 └── Figures/                   Figures (not tracked)
@@ -108,10 +109,11 @@ corrections listed in `docs/PIPELINE.md` Section 3.
 
 ## Inputs not included in this repository
 
-The raw HETUS 2010 country microdata and the lookup table from activity to
-appliance power and metabolic rate (`HETUS_mapped_data.csv`) are Eurostat
-Scientific Use Files under restricted access and are not included. The run
-behind the manuscript used the release of November 2020. `docs/PIPELINE.md`
+The raw HETUS 2010 country microdata are Eurostat Scientific Use Files under
+restricted access and are not included. The run behind the manuscript used the
+release of November 2020. The lookup table from activity to appliance power and
+metabolic rate, `data/HETUS_mapped_data.csv`, is the author's own and is
+included (`docs/PIPELINE.md` Section 0 describes its columns). `docs/PIPELINE.md`
 Section 0 lists the expected file names.
 
 ## Corrections and open items
@@ -137,7 +139,8 @@ will be corrected in version 1.1.0.
 ## License
 
 The code is released under the MIT License (`LICENSE`). The aggregate results
-in `outputs/` and the documentation in `docs/` are released under the
+in `outputs/`, the mapping table `data/HETUS_mapped_data.csv` and the
+documentation in `docs/` are released under the
 Creative Commons Attribution 4.0 International License
 (`LICENSES/CC-BY-4.0.txt`). Neither license covers the HETUS microdata, which
 remain subject to Eurostat's conditions of access.

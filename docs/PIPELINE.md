@@ -9,13 +9,26 @@ claim in the manuscript.
 ## 0. Inputs not included in this repository
 
 The raw HETUS country files (`{COUNTRY_CODE}.csv`, one per country: BE, DE,
-EE, EL, ES, FI, FR, HU, IT, LU, NL, NO, PL, RO, RS, UK) and
-`HETUS_mapped_data.csv` (the lookup table from activity code to appliance
-power and to metabolic rate) are not included. They are restricted-access
-Eurostat Scientific Use Files and must be obtained separately and placed
-together in `data/raw/` (or in the folder given by `HETUS_DATA_DIR`) before
-Stage 01 is run. The run of 14 October 2026 used the release of November
-2020.
+EE, EL, ES, FI, FR, HU, IT, LU, NL, NO, PL, RO, RS, UK) are not included. They
+are restricted-access Eurostat Scientific Use Files and must be obtained
+separately and placed in `data/raw/` (or in the folder given by
+`HETUS_DATA_DIR`) before Stage 01 is run. The run of 14 October 2026 used the
+release of November 2020.
+
+The lookup table from activity code to appliance power and to metabolic rate,
+`data/HETUS_mapped_data.csv`, is part of the repository (until version 1.0.1 it
+was expected next to the raw files, and a copy there is still used when the
+one in `data/` is missing). It has one row per HETUS activity code
+(`activity`, the code used in `Mact` and `Sactn`) with its name
+(`activity_name`), the corresponding code and label of the 2008 HETUS
+guidelines (`TUS_activity_code`, `TUS_activity_label`), the activity of the
+Compendium of Physical Activities behind the metabolic rate (`MET_info`), the
+author's code for how the two codings correspond (`Mapping`), the
+representative appliance power in W (`Appliance_Power_Watts`), the metabolic
+rate in W for infants, children, teenagers, adults and seniors
+(`MR_infant_Watts` to `MR_senior_Watts`), and flags for activities that need
+light (`Light_use`) or hot water (`Water_use`), which no stage reads at
+present. Its 108 codes have whole-watt powers, 30 of them above zero.
 
 ## 1. Input/output contract
 
