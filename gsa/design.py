@@ -20,8 +20,22 @@ from dataclasses import dataclass, field
 import numpy as np
 from scipy.stats import qmc
 
-# The 18 activities at 5 W other than radio (831), in X6
-FIVE_WATT = [31, 39, 329, 333, 351, 352, 353, 359, 363, 421, 422, 424, 513, 514, 529, 619, 719, 732]
+# The 16 activities at 5 W other than radio (831), in X6. 422 (help in
+# employment and farming) and 424 (other childcare as help) draw 0 W from the
+# check of the codes of November 2026 (docs/PIPELINE.md Section 3.17, K4)
+FIVE_WATT = [31, 39, 329, 333, 351, 352, 353, 359, 363, 421, 513, 514, 529, 619, 719, 732]
+
+# Appliance items of the household questionnaire used by the ownership factor
+# X10: an activity draws no power where the household lacks the appliance.
+# HHQ6c is the number of television sets top-coded at one (0 none, 1 one or
+# more); the other items code 1 yes and 2 no. Where an item was not asked
+# (HHQ6c in ES, IT, LU, NL, NO and PL, HHQ6h in ES, IT, LU, NL and PL, HHQ6o in
+# ES and LU), the household is taken to own the appliance.
+OWNERSHIP = {
+    "HHQ6c": {"codes": [821], "lacks": 0},
+    "HHQ6h": {"codes": [331], "lacks": 2},
+    "HHQ6o": {"codes": [721, 722, 723, 729, 733], "lacks": 2},
+}
 
 
 @dataclass
@@ -57,11 +71,14 @@ FACTORS = [
            player="P_appliances"),
     Factor("X5", "Computing (721-729) and games (733)", "power", codes=POWER["X5"], v8=(201, 210),
            player="P_appliances"),
-    Factor("X6", "Household management (371) and the 18 activities at 5 W", "power",
+    Factor("X6", "Household management (371) and the 16 activities at 5 W", "power",
            codes=POWER["X6"], v8=(70, 5), player="P_appliances"),
     Factor("X7", "SD of log country multipliers", "uniform", 0.0, 0.3, v8=0.0, player="P_country"),
     Factor("X8", "Seed of the country multipliers", "seed", player="P_country"),
-    Factor("X9", "Shared-appliance rule", "levels", levels=("union", "per_person", "tv_capped"),
+    # X9: union of codes at home (v8), every diarist's codes counted, or every
+    # diarist's codes with television counted once in a household that has a
+    # set (HHQ6c = 1). The scientific use files hold no number of sets.
+    Factor("X9", "Shared-appliance rule", "levels", levels=("union", "per_person", "tv_once"),
            v8="union"),
     Factor("X10", "Ownership", "levels", levels=("ignored", "applied"), v8="ignored"),
     Factor("X11", "Weight of codes recorded only as secondary", "uniform", 0.0, 1.0, v8=1.0),
