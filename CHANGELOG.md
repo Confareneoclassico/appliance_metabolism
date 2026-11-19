@@ -32,6 +32,14 @@ corrected pipeline. `tools/collect_exports.py` copies the exports of a run that
 may be shared, tested again with the publication rules, and Stage 09 pools the
 codes shared in fewer than 50 household-days.
 
+Stage 03 computes the household power as a sparse product p = A w and runs in
+minutes instead of 10 to 15 hours, with the same values to the last bit (its
+former loop is kept in `pipeline/aggregate_household_loop_reference.py` and
+`tools/compare_stage03.py` compares the two). It writes the long file only with
+`HETUS_WRITE_LONG=1`, and with `HETUS_SAVE_ACTIVITY_MATRIX=1` it saves the
+matrices of activity codes in use that the sensitivity analysis needs
+(`docs/PIPELINE.md` Section 3.16).
+
 ## 1.0.1 (19 November 2026)
 
 doi:10.5281/zenodo.24368824

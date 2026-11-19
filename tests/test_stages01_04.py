@@ -94,7 +94,7 @@ def test_daily_totals_by_household_day(processed):
 
 
 def test_household_metabolic_rate_sums_persons(processed):
-    long = pd.read_csv(processed / "household_interval_timeseries_long.csv")
-    h1 = long[long.HID == "EE_1"].set_index("Interval")
+    wide = pd.read_csv(processed / "household_interval_timeseries.csv")
+    h1 = wide[wide.HID == "EE_1"].iloc[0]
     # slot 1: both members asleep at home count twice, not once
-    assert h1.loc[1, "Household_Metabolic_W"] == pytest.approx(2 * MR_ADULT[11])
+    assert h1["Household_Metabolic_W_1"] == pytest.approx(2 * MR_ADULT[11])

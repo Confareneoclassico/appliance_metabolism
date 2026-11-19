@@ -49,7 +49,7 @@ are named by the two-letter country code, for example
 |---|--------|-------|--------|
 | 01 | `calculate_diarist_metrics.py` | `{COUNTRY}.csv` (16 raw HETUS files), `HETUS_mapped_data.csv` | `lu_data_at_home_with_diarist_metrics.csv`, plus a console table of variable coverage by country |
 | 02 | `calculate_dominant_activity.py` | Stage 01 output, `HETUS_mapped_data.csv` | `lu_data_at_home_with_dominant_activity.csv` |
-| 03 | `aggregate_household.py` | Stage 02 output, `HETUS_mapped_data.csv` | `household_interval_timeseries.csv` (wide), `household_interval_timeseries_long.csv` (long), `person_daily_metabolic_totals.csv`, `household_daily_totals.csv` (diagnostic only, not read by any later stage) |
+| 03 | `aggregate_household.py` | Stage 02 output, `HETUS_mapped_data.csv` | `household_interval_timeseries.csv` (wide), `person_daily_metabolic_totals.csv`, `household_daily_totals.csv` (diagnostic only, not read by any later stage); `household_interval_timeseries_long.csv` (long) only with `HETUS_WRITE_LONG=1`, and `activity_matrix.npz` only with `HETUS_SAVE_ACTIVITY_MATRIX=1` (Section 3.16) |
 | 04 | `prepare_clustering_data.py` | `household_interval_timeseries.csv` | `prepared_clustering_data.csv` (energy series, 16 clustering features, and `DDV7` as an auxiliary column) |
 | 05 | `clustering_analysis_global.py` | `prepared_clustering_data.csv` | `clustering_results.csv`, `cluster_summary.csv`, `categorical_feature_statistics.csv` (superseded, see Section 2), elbow and PCA figures, `Figures/cluster_energy_profiles_10min_combined.png` (Figure 2 of the article) and `Figures/cluster_energy_profiles_10min_panels.png` (small-multiple version), console log |
 | 06 | `clustering_country_day.py` | `prepared_clustering_data.csv` | `DayType_Analysis/`, `Country_Analysis/` (one set per country), `Country_DayType_Analysis/`, `Country_Analysis/country_comparison_summary.csv`, `Country_DayType_Analysis/country_daytype_combined_summary.csv`, `Country_DayType_Analysis/{working,non_working}_days_cross_country.csv`, figures |
@@ -509,6 +509,42 @@ the rules of `disclosure.py` (size columns and, for mean profiles,
 `check_export`), the main figures, and the solution-level lines of a saved
 console log. It never copies a working file, and its manifest lists what was
 copied, refused or missing (`test_collect_exports.py`).
+
+### 3.16 Stage 03 as sparse products (version 1.1.0)
+
+Stage 03 used to loop over household-days, slots and diarists, building a
+small table for every slot, and took 10 to 15 hours on HETUS 2010. It now
+reads the diarist records once into arrays and computes every slot of every
+household-day together. The power of a household-day in a slot is the sum of
+the appliance powers of the distinct activity codes, main or secondary, of
+the diarists at home, so the power of all household-days is a sparse product
+p = A w: A has one row per household-day and slot and one column per activity
+code, with a 1 where the code is in use at home, and w holds the powers of the
+mapping table. The sensitivity analysis needs only other vectors w, and other
+matrices for its structural factors: `HETUS_SAVE_ACTIVITY_MATRIX=1` writes the
+matrix of codes in use (union), the matrix of codes used as a main activity by
+at least one diarist at home, and the number of diarists at home using each
+code, each diarist counted once per code, to `activity_matrix.npz`, with the
+household-days of its row blocks in `activity_matrix_households.csv`.
+
+The new stage reproduces the loop exactly. Power is a sum of whole watts. The
+metabolic rate of a slot is summed over the diarists at home in the order of
+the loop and with the same arithmetic (sequential for up to seven terms,
+numpy's own summation for eight or more), and the person totals are
+accumulated slot by slot as before. The loop is kept in
+`pipeline/aggregate_household_loop_reference.py`, which writes to
+`processed/stage03_loop_reference/`, and `tools/compare_stage03.py` compares
+every value of the two (`test_stage03_fast.py`: households of two to nine
+diarists with empty, negative and unmapped secondary codes and empty
+locations, compared value by value, the long file included). On 48,182
+synthetic diarist records it took 21 seconds and 1.1 GB of memory, so a few
+minutes for HETUS 2010. The long file, which no stage reads, is written only
+with `HETUS_WRITE_LONG=1`, and the daily totals are computed in memory.
+
+The stage also prints, by country, the share of at-home diarist-slots with
+secondary code 999 (other unspecified time use), to check whether the
+Netherlands, where no at-home slot has an empty secondary code (audit check
+C5), code an absent secondary activity as 999.
 
 ## 4. Design choices that constrain interpretation
 
