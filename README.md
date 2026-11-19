@@ -102,7 +102,7 @@ internals are unchanged except for the corrections listed in
 │   ├── peaks.py                          (daily peak times and their circular statistics)
 │   ├── 01_calculate_diarist_metrics.py   (aligns column names across countries)
 │   ├── 02_calculate_dominant_activity.py
-│   ├── 03_aggregate_household.py
+│   ├── 03_aggregate_household.py         (household power as a sparse product, minutes)
 │   ├── 04_prepare_clustering_data.py
 │   ├── 05_clustering_analysis_global.py
 │   ├── 06_clustering_country_day.py
@@ -111,9 +111,11 @@ internals are unchanged except for the corrections listed in
 │   ├── 09_same_diarists_coincidence.py   (activities shared at home by the diarists)
 │   ├── 10_p_h_counting.py
 │   ├── 11_visualize_cluster_drivers.py
+│   ├── aggregate_household_loop_reference.py  (the former loop of Stage 03, for checks only)
 │   └── plot_country_cluster_profiles.py  (country cluster figure, from aggregates only)
 ├── tests/                     Tests on synthetic data (python -m pytest tests)
 ├── tools/collect_exports.py   Copies the exports that may be shared
+├── tools/compare_stage03.py   Compares Stage 03 with a reference run, value by value
 ├── archive/
 │   ├── clustering_analysis_v1_2025-11-26_SUPERSEDED_BY_05.py
 │   └── statistical_validation_v1_UNPATCHED_no_cramers_v_SUPERSEDED_BY_07.py
