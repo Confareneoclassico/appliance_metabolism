@@ -34,22 +34,30 @@ SKIP_DIAGNOSTICS=1 bash run_pipeline.sh
 #    processed/prepared_clustering_data.csv (Stages 05 to 08 and 11), with
 #    the optional stability diagnostics of the global solution
 START_STAGE=5 SKIP_DIAGNOSTICS=1 HETUS_STABILITY=1 bash run_pipeline.sh
+
+# 4. Optionally, run the tests on synthetic data (no microdata needed)
+pip install pytest
+python -m pytest tests
 ```
 
 Optional settings (environment variables): `HETUS_CLUSTER_ON_SOCIO=1` adds the
 one-hot background variables to the clustering features, as before October
 2026 (for comparison only), `HETUS_STABILITY=1` and `HETUS_STABILITY_REPS`
 control the stability diagnostics of Stage 05, and `HETUS_RUN_ALL_DATA_PASS=1`
-restores the duplicate first pass of Stage 06. The export files follow
-Eurostat's publication rules for HETUS (`pipeline/disclosure.py`): groups of
-fewer than 20 household-days are listed without size or statistics and their
-household-days are reported with the largest cluster of their solution, groups
-of 20 to 49 are flagged and listed without their size, sizes are rounded
-wherever a group of the same solution is withheld or flagged, and association
-tests are withheld or flagged for item non-response above 50% or 20%.
-`HETUS_MIN_N_EXPORT` (20), `HETUS_FLAG_N` (50) and
-`HETUS_ROUND_N` (10) hold these thresholds, which should not be lowered for
-files that are shared or published.
+restores the duplicate first pass of Stage 06, `HETUS_COUNTRIES` (for instance
+`BE,EE,FR`) restricts a run to some of the countries, and `HETUS_DRIVER_TOP_N`
+(6) sets how many variables Stage 11 draws. The export files follow Eurostat's
+publication rules for HETUS (`pipeline/disclosure.py`): every cluster of fewer
+than 50 household-days is reported together with the largest cluster of its
+solution in every file and figure, so that every published size is exact and
+none below 50 can be derived from the others; every table of group means is
+tested before it is written for means that reveal a smaller group; Stage 06
+stops if a country and day type has between 1 and 49 household-days; and
+association tests are withheld for fewer than 50 observations or item
+non-response above 50%, and flagged for non-response above 20%.
+`HETUS_MIN_N_EXPORT` (20), `HETUS_FLAG_N` (50) and `HETUS_ROUND_N` (10) hold
+the thresholds, which should not be lowered for files that are shared or
+published.
 
 Every stage takes its file locations from `pipeline/paths.py`, which resolves
 them from the repository root, so a stage can be run from any directory
@@ -59,9 +67,10 @@ folder in the `HETUS_DATA_DIR` environment variable), all intermediate and
 output CSVs are written to `processed/`, with one subfolder per stratification
 level, and figures to `Figures/`. To use other folders, edit the three
 defaults in `paths.py` or set `HETUS_DATA_DIR`, `HETUS_PROCESSED_DIR` and
-`HETUS_FIGURES_DIR`. The scripts carry a numeric prefix that makes the
-execution order explicit. Their internals are unchanged except for the
-corrections listed in `docs/PIPELINE.md` Section 3.
+`HETUS_FIGURES_DIR`; a relative value is taken from the repository root. The
+scripts carry a numeric prefix that makes the execution order explicit. Their
+internals are unchanged except for the corrections listed in
+`docs/PIPELINE.md` Section 3.
 
 ## Repository layout
 
@@ -81,6 +90,8 @@ corrections listed in `docs/PIPELINE.md` Section 3.
 ├── pipeline/
 │   ├── paths.py                          (all input and output locations)
 │   ├── disclosure.py                     (Eurostat publication rules for the exports)
+│   ├── countries.py                      (country codes shared by Stages 01 and 06)
+│   ├── peaks.py                          (daily peak times and their circular statistics)
 │   ├── 01_calculate_diarist_metrics.py   (aligns column names across countries)
 │   ├── 02_calculate_dominant_activity.py
 │   ├── 03_aggregate_household.py
@@ -89,10 +100,11 @@ corrections listed in `docs/PIPELINE.md` Section 3.
 │   ├── 06_clustering_country_day.py
 │   ├── 07_statistical_validation.py      (adds Cramér's V at every level)
 │   ├── 08_circular_stats_peak_time.py
-│   ├── 09_same_diarists_coincidence.py   (excludes missing activity codes)
+│   ├── 09_same_diarists_coincidence.py   (activities shared at home by the diarists)
 │   ├── 10_p_h_counting.py
 │   ├── 11_visualize_cluster_drivers.py
 │   └── plot_country_cluster_profiles.py  (country cluster figure, from aggregates only)
+├── tests/                     Tests on synthetic data (python -m pytest tests)
 ├── archive/
 │   ├── clustering_analysis_v1_2025-11-26_SUPERSEDED_BY_05.py
 │   └── statistical_validation_v1_UNPATCHED_no_cramers_v_SUPERSEDED_BY_07.py
@@ -133,8 +145,10 @@ columns of `outputs/country_daytype_combined_summary.csv` and the stratified
 rows of `outputs/consolidated_circular_stats.csv`, from which the sizes of
 small clusters could be derived (`CHANGELOG.md`, `docs/PIPELINE.md` Section
 3.14). The code and the results quoted in the manuscript are unchanged.
-`CHANGELOG.md` also lists the issues found by the audit of November 2026 that
-will be corrected in version 1.1.0.
+The issues found by the audit of November 2026 are corrected for version
+1.1.0 (`docs/PIPELINE.md` Section 3.15, `CHANGELOG.md`), each with a test in
+`tests/`; the outputs of the corrected pipeline on the microdata will replace
+those in `outputs/` with that version.
 
 ## License
 
