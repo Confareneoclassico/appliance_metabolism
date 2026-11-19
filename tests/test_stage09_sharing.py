@@ -53,12 +53,12 @@ RECORDS = [
 
 def result():
     ids, M, S, W = build(RECORDS)
-    summary, codes, kinds = stage09.compute_sharing(ids, M, S, W)
-    return summary.set_index(["HID", "DIARY"]), codes, kinds
+    summary, codes, kinds, day_codes = stage09.compute_sharing(ids, M, S, W)
+    return summary.set_index(["HID", "DIARY"]), codes, kinds, day_codes
 
 
 def test_shares_by_household_day():
-    s, _, _ = result()
+    s, _, _, _ = result()
     expect = {  # (HID, DIARY): (n_diarists, comparable, shared)
         ("A", "1"): (2, 144, 144), ("B", "1"): (2, 72, 72), ("C", "1"): (2, 144, 0),
         ("D", "1"): (2, 144, 144), ("E", "1"): (3, 72, 0), ("G", "1"): (2, 0, 0),
@@ -73,14 +73,33 @@ def test_shares_by_household_day():
 
 
 def test_kinds_and_codes_of_shared_pairs():
-    _, codes, kinds = result()
+    s, codes, kinds, day_codes = result()
     # shared (slot, code) pairs: A 144, B 72, D 144, I-1 144 (all TV or sleep)
     assert kinds.tolist() == [144 + 72 + 144, 0, 144]   # D is mixed
     assert codes[821] == 144 * 3 and codes[11] == 72
+    # household-days in which each code is shared: TV in A, D and I-1, sleep in B
+    keys = s.reset_index()[["HID", "DIARY"]].apply(tuple, axis=1).to_numpy()
+    shared_in = {(keys[r], c) for r, c in day_codes}
+    assert shared_in == {(("A", "1"), 821), (("D", "1"), 821), (("I", "1"), 821),
+                         (("B", "1"), 11)}
+
+
+def test_rare_codes_are_pooled():
+    counts = np.zeros(stage09.CODE_BASE)
+    counts[[11, 821, 311, 321]] = [9000, 3000, 40, 15]
+    day_codes = np.r_[np.c_[np.arange(300), np.full(300, 11)],     # sleep in 300 days
+                      np.c_[np.arange(120), np.full(120, 821)],    # TV in 120
+                      np.c_[np.arange(30), np.full(30, 311)],      # cooking in 30
+                      np.c_[np.arange(25, 35), np.full(10, 321)]]  # cleaning in 10
+    t = stage09.code_table(counts, day_codes)
+    assert t.activity.tolist() == ["11", "821", "other"]
+    assert t.household_days.tolist()[:2] == [300, 120]
+    other = t.iloc[-1]
+    assert other.frequency == 55 and np.isnan(other.household_days)  # 35 days < 50
 
 
 def test_table_by_diarists_hides_small_groups():
-    s, _, _ = result()
+    s, _, _, _ = result()
     table = stage09.by_diarists(s.reset_index())
     assert table["mean"].isna().all()              # every group has fewer than 50
     assert table["household_days"].isna().all()

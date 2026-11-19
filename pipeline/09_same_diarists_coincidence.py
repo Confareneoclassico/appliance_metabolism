@@ -19,7 +19,11 @@ that was not in the repository.
 Outputs (working files, not to be shared: one row per household-day):
     same_activity_household_summary.csv
 Aggregate outputs:
-    shared_activities_frequency.csv   shared (slot, code) pairs by activity code
+    shared_activities_frequency.csv   shared (slot, code) pairs and the
+                                      household-days they come from, by
+                                      activity code; codes shared in fewer
+                                      than MIN_N_UNFLAGGED household-days are
+                                      pooled as "other"
     activity_combination_counts.csv   main for every diarist, secondary for
                                       every diarist, or mixed
     same_activity_by_diarists.csv     mean and median share by number of
@@ -70,8 +74,8 @@ def shared_slots(g, d, t, codes, flags):
     """For entries (group g, diarist d, slot t, code, flag 0 = main or
     1 = secondary), the slot ids (g * 144 + t) in which at least two distinct
     diarists of the group have the same code, and for each shared
-    (slot, code) its code and whether it is main for every diarist (0),
-    secondary for every diarist (1) or mixed (2)."""
+    (slot, code) its code, whether it is main for every diarist (0),
+    secondary for every diarist (1) or mixed (2), and its group."""
     key = (g.astype(np.int64) * SLOTS + t) * CODE_BASE + codes
     pair = np.unique((key * MAX_DIARISTS + d) * 2 + flags)   # main sorts first
     kd = pair // 2
@@ -84,13 +88,15 @@ def shared_slots(g, d, t, codes, flags):
     nsec = np.add.reduceat(fl, start) if len(start) else np.array([], int)
     kind = np.where(nsec == 0, 0, np.where(nsec == cnt, 1, 2))[sh]
     sk = uk[sh]
-    return np.unique(sk // CODE_BASE), sk % CODE_BASE, kind
+    return np.unique(sk // CODE_BASE), sk % CODE_BASE, kind, sk // CODE_BASE // SLOTS
 
 
 def compute_sharing(ids, M, S, W, batch=20000):
     """One row per multi-diarist household-day (HID, DIARY): number of
     diarists, comparable slots, shared slots and the share in %, with the
-    counts of shared (slot, code) pairs by code and by kind."""
+    counts of shared (slot, code) pairs by code and by kind, and the
+    distinct (household-day, code) pairs with a shared slot, as an array of
+    (row of the summary, code)."""
     hid = ids["HID"].astype(str).to_numpy()
     pid = ids["PID"].astype(str).to_numpy()
     key = pd.Series(hid) + "|" + ids["DIARY"].astype(str).values
@@ -107,6 +113,7 @@ def compute_sharing(ids, M, S, W, batch=20000):
     rows = {"key": [], "n_diarists": [], "comparable_slots": [], "shared_slots": []}
     code_counts = np.zeros(CODE_BASE)
     kinds = np.zeros(3)
+    day_codes = []
     for b in range(0, len(multi), batch):
         grp = multi[b:b + batch]
         idx = np.concatenate([np.arange(starts[i], starts[i] + sizes[i]) for i in grp])
@@ -119,7 +126,7 @@ def compute_sharing(ids, M, S, W, batch=20000):
         T = np.broadcast_to(np.arange(SLOTS), m.shape)
         G = np.broadcast_to(gl[:, None], m.shape)
         D = np.broadcast_to(dl[:, None], m.shape)
-        sl, codes, kind = shared_slots(
+        sl, codes, kind, pair_group = shared_slots(
             np.r_[G[a], G[c]], np.r_[D[a], D[c]], np.r_[T[a], T[c]],
             np.r_[m[a], s[c]].astype(np.int64),
             np.r_[np.zeros(a.sum(), np.int64), np.ones(c.sum(), np.int64)])
@@ -132,6 +139,8 @@ def compute_sharing(ids, M, S, W, batch=20000):
         comparable = np.bincount(gt[cnt >= 2] // SLOTS, minlength=ng)
         code_counts += np.bincount(codes, minlength=CODE_BASE)[:CODE_BASE]
         kinds += np.bincount(kind, minlength=3)[:3]
+        dc = np.unique(pair_group * CODE_BASE + codes)
+        day_codes.append(np.c_[b + dc // CODE_BASE, dc % CODE_BASE])
         rows["key"].extend(uniques[g_all[starts[grp]]])
         rows["n_diarists"].extend(persons[grp])
         rows["comparable_slots"].extend(comparable)
@@ -142,8 +151,9 @@ def compute_sharing(ids, M, S, W, batch=20000):
     with np.errstate(invalid="ignore", divide="ignore"):
         out["same_activity_percentage"] = np.where(
             out.comparable_slots > 0, 100 * out.shared_slots / out.comparable_slots, np.nan)
-    return out[["HID", "DIARY", "n_diarists", "comparable_slots", "shared_slots",
-                "same_activity_percentage"]], code_counts, kinds
+    day_codes = np.vstack(day_codes) if day_codes else np.zeros((0, 2), dtype=np.int64)
+    return (out[["HID", "DIARY", "n_diarists", "comparable_slots", "shared_slots",
+                 "same_activity_percentage"]], code_counts, kinds, day_codes)
 
 
 def by_diarists(summary):
@@ -166,6 +176,28 @@ def by_diarists(summary):
     return t.reset_index()
 
 
+def code_table(code_counts, day_codes, min_n=MIN_N_UNFLAGGED):
+    """Shared (slot, code) pairs and the number of household-days they come
+    from, by activity code, most frequent first. Codes shared in fewer than
+    `min_n` household-days are pooled as "other", whose household-days are
+    left empty when they are fewer than `min_n`, so that no count rests on
+    fewer than `min_n` household-days."""
+    pairs = pd.Series(code_counts).astype(int)
+    pairs = pairs[pairs > 0]
+    days = pd.Series(day_codes[:, 1]).value_counts() if len(day_codes) else pd.Series(dtype=int)
+    days = days.reindex(pairs.index).fillna(0).astype(int)
+    big = days[days >= min_n].index
+    table = pd.DataFrame({"activity": big.astype(str), "frequency": pairs[big].values,
+                          "household_days": days[big].values})
+    table = table.sort_values("frequency", ascending=False)
+    small = pairs.index.difference(big)
+    if len(small):
+        other_days = len(np.unique(day_codes[np.isin(day_codes[:, 1], small), 0]))
+        table.loc[len(table)] = {"activity": "other", "frequency": int(pairs[small].sum()),
+                                 "household_days": other_days if other_days >= min_n else np.nan}
+    return table.reset_index(drop=True)
+
+
 def make_figure(summary, table, path):
     s = summary.dropna(subset=["same_activity_percentage"])
     fig, ax = plt.subplots(1, 2, figsize=(10, 4))
@@ -186,7 +218,7 @@ def make_figure(summary, table, path):
 def main():
     print(f"Reading {INPUT}")
     ids, M, S, W = read_records()
-    summary, code_counts, kinds = compute_sharing(ids, M, S, W)
+    summary, code_counts, kinds, day_codes = compute_sharing(ids, M, S, W)
     summary.to_csv(PROCESSED_DIR / "same_activity_household_summary.csv", index=False)
     table = by_diarists(summary)
     table.to_csv(PROCESSED_DIR / "same_activity_by_diarists.csv", index=False)
@@ -195,10 +227,8 @@ def main():
     kinds_s = pd.Series(kinds, index=["main for every diarist", "secondary for every diarist",
                                       "mixed"], name="count")
     kinds_s.to_csv(PROCESSED_DIR / "activity_combination_counts.csv", header=["count"])
-    freq = pd.Series(code_counts).astype(int)
-    freq = freq[freq > 0].sort_values(ascending=False)
-    freq.index.name = "activity"
-    freq.to_csv(PROCESSED_DIR / "shared_activities_frequency.csv", header=["frequency"])
+    freq = code_table(code_counts, day_codes)
+    freq.to_csv(PROCESSED_DIR / "shared_activities_frequency.csv", index=False)
 
     s = summary.same_activity_percentage.dropna()
     print(f"Multi-diarist household-days: {len(summary)}; with at least one comparable slot: {len(s)}")
@@ -209,7 +239,8 @@ def main():
         print("Shared (slot, code) pairs: " + ", ".join(
             f"{k} {100 * v / tot:.1f}%" for k, v in kinds_s.items()))
         print("Most frequently shared codes: " + ", ".join(
-            f"{c} ({100 * n / tot:.1f}%)" for c, n in freq.head(5).items()))
+            f"{r.activity} ({100 * r.frequency / tot:.1f}%)"
+            for r in freq[freq.activity != "other"].head(5).itertuples()))
     make_figure(summary, table, FIGURES_DIR / "same_activity_analysis.png")
 
 

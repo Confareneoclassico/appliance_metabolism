@@ -6,6 +6,8 @@ data/raw/
 # them). Locations are set in pipeline/paths.py.
 processed/
 Figures/
+# Exports collected for sharing by tools/collect_exports.py
+exports_for_sharing/
 
 # Python
 __pycache__/
