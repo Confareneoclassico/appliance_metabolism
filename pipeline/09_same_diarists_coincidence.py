@@ -4,7 +4,9 @@ The statistic shows how often the shared-appliance rule of Stage 03 is
 exercised. For every household-day with two or more diarists, a slot is
 comparable when at least two diarists are at home (Wherep = 1) with a valid
 activity code, and shared when at least two of those diarists record the same
-code, as main or secondary activity. Each diarist counts once per code, so a
+code, as main or secondary activity. Code 999 (other unspecified time use,
+which includes "no activity recorded") is not a valid code: two diarists
+whose activities are both unspecified are not known to share one. Each diarist counts once per code, so a
 code recorded by one diarist as both main and secondary activity is not a
 second diarist. The share of a household-day is its shared slots over its
 comparable slots.
@@ -45,6 +47,7 @@ WHERE = [f"Wherep{i}" for i in range(1, SLOTS + 1)]
 NA16 = np.int16(-32768)   # an empty cell in the int16 arrays
 CODE_BASE = 10000         # activity codes are below this
 MAX_DIARISTS = 64         # diarist records per household-day are below this
+UNSPECIFIED = 999         # other unspecified time use: not a valid code here
 INPUT = PROCESSED_DIR / "lu_data_at_home_with_dominant_activity.csv"
 
 
@@ -122,7 +125,8 @@ def compute_sharing(ids, M, S, W, batch=20000):
         dl = np.concatenate([pd.factorize(pid_o[starts[i]:starts[i] + sizes[i]])[0] for i in grp])
         m, s, w = Mo[idx], So[idx], Wo[idx]
         home = w == 1
-        a, c = (m > 0) & home, (s > 0) & home
+        a = (m > 0) & (m != UNSPECIFIED) & home
+        c = (s > 0) & (s != UNSPECIFIED) & home
         T = np.broadcast_to(np.arange(SLOTS), m.shape)
         G = np.broadcast_to(gl[:, None], m.shape)
         D = np.broadcast_to(dl[:, None], m.shape)

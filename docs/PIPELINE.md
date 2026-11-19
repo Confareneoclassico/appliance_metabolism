@@ -21,17 +21,22 @@ some of the countries, which keep the codes of the full list
 The lookup table from activity code to appliance power and to metabolic rate,
 `data/HETUS_mapped_data.csv`, is part of the repository (until version 1.0.1 it
 was expected next to the raw files, and a copy there is still used when the
-one in `data/` is missing). It has one row per HETUS activity code
-(`activity`, the code used in `Mact` and `Sactn`) with its name
-(`activity_name`), the corresponding code and label of the 2008 HETUS
-guidelines (`TUS_activity_code`, `TUS_activity_label`), the activity of the
+one in `data/` is missing). It has one row per HETUS activity code: `activity`
+and `activity_name` are the 108 codes and headings of the activity coding list
+of the 2008 guidelines (ACL 2008, Annex V), the codes used in `Mact` and
+`Sactn`. `TUS_activity_code` and `TUS_activity_label` give a corresponding code
+of a finer four-digit list (for instance 3611, shopping mainly for food, for
+361), and `Mapping` the author's code for how the two correspond (in 106 of the
+108 rows, 0 marks a one-to-one match, 1 one finer code chosen among several,
+and 2 a finer code under another three-digit number, as 4240 for 421, a
+reading still to be confirmed). The table also gives the activity of the
 Compendium of Physical Activities behind the metabolic rate (`MET_info`), the
-author's code for how the two codings correspond (`Mapping`), the
 representative appliance power in W (`Appliance_Power_Watts`), the metabolic
 rate in W for infants, children, teenagers, adults and seniors
 (`MR_infant_Watts` to `MR_senior_Watts`), and flags for activities that need
 light (`Light_use`) or hot water (`Water_use`), which no stage reads at
-present. Its 108 codes have whole-watt powers, 30 of them above zero.
+present. Its 108 codes have whole-watt powers, 28 of them above zero (30 up to
+version 1.1.0 before the check of the codes, Section 3.17).
 
 ## 1. Input/output contract
 
@@ -459,7 +464,7 @@ comes next, and Section 5 will then give the corrected numbers.
 | L9 | `paths.py`, `run_pipeline.sh` | A relative `HETUS_*` location is taken from the repository root; `run_pipeline.sh` reads all locations from `paths.py` | None with absolute settings | `test_paths.py` |
 | L10 | Stage 01 | A code recorded as main and secondary activity counts once in the per-diarist series | `Diarist_Energy_Demand_Series` (not read later) | `test_stages01_04.py` |
 | L11 | Stage 02 | Metabolic rates are looked up by `activity`, as in Stages 01 and 03 | Dominant activity, so the diagnostic `n_unique_activities_after_dedup` | `test_stages01_04.py` |
-| L12 | Stage 01, this section | `SOCIO_LABELS` corrected (`DDV1` day of the week, `DDV3` month, `DDV6` worked or studied); the quarter recoding and the at-home filter documented below | None | none needed |
+| L12 | Stage 01, this section | `SOCIO_LABELS` corrected (`DDV1` day of the week, `DDV3` month, `DDV6` employed or student, `HHC3` and `HHC4` by age, Section 3.17); the quarter recoding and the at-home filter documented below | None | none needed |
 | L13 | `peaks.py`, Stage 08 | Clock times rounded to the minute and reduced modulo 24 h | At most one minute | `test_peaks.py` |
 | L14 | Stages 09, 10 | Diarists counted as distinct persons (`HID`, `PID`) per household-day | Console totals of Stage 10, `diarists_per_household_summary.csv` now per household-day | `test_stage09_sharing.py` |
 | (export) | Stage 09 | `shared_activities_frequency.csv` gives the household-days in which each code is shared, and pools as "other" the codes shared in fewer than 50 household-days | Codes of rare shared activities no longer listed one by one | `test_stage09_sharing.py` |
@@ -488,10 +493,13 @@ V together give N.
 
 The number of clusters is unchanged in this version: K is still chosen by
 `KneeLocator` on the grid 2 to 15 with a fallback of 8 for the global solution
-and on 2 to 10 with a fallback of 4 for the stratified ones. Whether to use one
-grid and rule at every level, as the audit recommends, depends on check C3,
-which counts the fallbacks of the run of 14 October 2026, and K enters the
-sensitivity analysis as a factor in any case.
+and on 2 to 10 with a fallback of 4 for the stratified ones. The run on the
+microdata of 19 November 2026 answers check C3: no knee was found, and K = 4 is
+the fallback, in 15 of the 47 stratified solutions (the national solutions of
+Italy, the Netherlands and Serbia, the working days of all countries, and 11
+of the 30 national day-type solutions), while the global K = 9 comes from the
+knee. The rule is kept, `k_selection` records it in every export, and K enters
+the sensitivity analysis as a factor (X16, X17).
 
 Stage 01, documented here for L12, recodes `DDV3` (month of the diary day) to
 the first month of its quarter (1, 4, 7 and 10), and keeps only the diarist
@@ -541,10 +549,39 @@ synthetic diarist records it took 21 seconds and 1.1 GB of memory, so a few
 minutes for HETUS 2010. The long file, which no stage reads, is written only
 with `HETUS_WRITE_LONG=1`, and the daily totals are computed in memory.
 
-The stage also prints, by country, the share of at-home diarist-slots with
+The stage printed, by country, the share of at-home diarist-slots with
 secondary code 999 (other unspecified time use), to check whether the
 Netherlands, where no at-home slot has an empty secondary code (audit check
-C5), code an absent secondary activity as 999.
+C5), code an absent secondary activity as 999. They do (89.9% of the Dutch
+at-home slots), and Stage 01 now sets the code to no secondary activity and
+prints the shares (Section 3.17).
+
+### 3.17 Changes after the check of the codes (version 1.1.0, November 2026)
+
+Every code used by the pipeline, the mapping table and the sensitivity
+analysis was checked against the variable list of the scientific use files
+(Annex 2 of Eurostat's anonymisation guide of HETUS wave 2010 data, 23 January
+2020) and the 2008 guidelines (Annex V for activities and locations), with
+`check_codes.py` run on the microdata for what the documents leave open
+(Section 6). The run of 19 November 2026 compared with version 1.0.0 is
+reported separately. Four changes follow, each with a test.
+
+| ID | Where | Change | What changes in the outputs | Test |
+|---|---|---|---|---|
+| K1 | Stage 01 | Same-day rule: a household-day (`HID`, `DIARY`) whose members at home kept their diaries on different weekdays (`DDV1`), or on the same weekday in different months (`DDV3` before its recoding to quarters) or years (`DDV4`), is left out; Stage 01 prints the counts by country, in classes below 50; `HETUS_SAME_DAY_RULE=0` keeps every household-day | Every output: on the microdata, about 470 to 680 household-days (0.24 to 0.36%) are left out | `test_sameday_999.py` |
+| K2 | Stage 01 | Secondary code 999 is set to no secondary activity in every country, and Stage 01 prints its share of the at-home slots by country (NL 89.9%, IT 2.2%, UK 0.05%, FR 0.03%, elsewhere 0) | Metabolic columns and the dominant activity (999 has 0 W); the activity matrices | `test_sameday_999.py` |
+| K3 | Stage 09 | Code 999 is not a valid code, as main or as secondary activity: two diarists whose activities are both unspecified are not known to share one | Shares of Stage 09, slightly (999 was 0.2% of the shared instances) | `test_stage09_sharing.py` |
+| K4 | `data/HETUS_mapped_data.csv` | 422 (help in employment and farming) and 424 (other childcare as help to another household) draw 0 W instead of 5 W, like paid work (111) and childcare (381 to 389, 423); in the 2000 list these numbers meant household upkeep and construction and repairs as help (Annex V, Table 10.1), where 5 W would match 329 and 351 to 359 | Power at home in the slots with these codes (rare) | `test_stages01_04.py` reads the table |
+| K5 | Stages 01, 11 | Labels of `DDV6` (employed or student, diary question 6a), `HHC3` (persons aged under 7), `HHC4` (persons aged 7 to 17) and `HHC5` (one, or two or more, persons aged 18 or over) | Driver figures | none needed |
+| K6 | `tools/collect_exports.py`, `run_pipeline.sh` | The collector also extracts the lines of Stage 01 tagged `[same-day rule]` and `[secondary 999]`, and stops with a message when none of the tables is found; the runner prints the processed folder and how to collect the exports | None | `test_collect_exports.py` |
+
+The same-day rule cannot see a postponement by whole weeks within one month,
+which the guidelines prescribe (a diary is moved by 7, 14 or 21 days, to the
+same weekday, Annex I, 6.2), because the day of the month (`DDV2`) is not in
+the scientific use files. `check_codes.py` found the detectable cases with the
+same weekday in another month in fewer than 20 multi-diarist household-days in
+ten countries, none in Romania and 1.95% in Luxembourg, which bounds the
+undetectable ones at well under 1% of the multi-diarist household-days.
 
 ## 4. Design choices that constrain interpretation
 
@@ -611,14 +648,55 @@ the Netherlands.
 collected in Norway). `04_prepare_clustering_data.py` previously described it
 as citizenship, which is `IND42_1` and is not used.
 
-`DDV7` (kind of day) is asked of persons who worked or studied (`DDV6` = 1).
+`DDV7` (kind of day) is asked of persons who are employed or students
+(`DDV6` = 1, diary question 6a, "Are you employed or a student?").
 Its codes are 1 ordinary work day, 2 ordinary school day, 3 day off, 4 sick
 leave, 5 vacation and 6 other leave, with −1 not applicable and −6 to −9 for
 not asked, refusal, don't know and not available. The SUF documentation
 states that it was not asked in DE, EL, ES, IT and LU, but the Greek microdata
-contain it (41% of diary records valid in the 11 October 2026 run), so in
-practice it is missing for DE, ES, IT and LU only. Estonia deviates from the
-common definition.
+contain it (41% of diary records valid in the 11 October 2026 run, with days
+off on 28% of weekend records), so in practice it is missing for DE, ES, IT
+and LU only. Estonia merges work and school days in code 1, as documented, and
+never uses code 3: its days off carry codes 4 to 6 (38.9% of weekend records,
+against 11.8% of weekday records). Since Stage 06 treats codes 3 to 6 alike,
+the Estonian day types are not affected.
+
+`Wherep` has 13 aggregated codes in the scientific use files, which the
+documentation does not list (the 2008 guidelines code home as 11, not 1).
+Their content on the microdata (`check_codes.py`, 15 countries pooled) fixes
+their meaning: 1 home (75.0% of slots, 47% of them asleep, no travel), 2 a
+weekend home or holiday apartment, 3 the workplace or school (84% paid work),
+4 other people's homes, 5 restaurants, cafes and pubs (55% eating), 6 shops
+and markets, 7 hotels and campsites (56% asleep), 8 to 12 travel (80 to 96%
+travel codes) and 13 other or unspecified locations (5.3% of slots). The
+German file codes every slot that is not travel as 13, which is why German
+household-days cannot be used.
+
+`HHQ6c` is the number of television sets, top-coded at one (0 none, 1 one or
+more), while the other appliance items of `HHQ6` code 1 yes and 2 no. The
+numbers of computers and mobile phones (`HHQ6o_1`, `HHQ6m_1`) are not in the
+scientific use files, and `HHQ6p` is the number of cars or vans. `HHC5`
+(persons aged 18 or over) takes the values 1 and 2 only (2 for two or more),
+`HHC3` and `HHC4` (persons aged under 7 and 7 to 17) 0 to 2.
+
+The files hold fewer records than Annex 1 of the anonymisation guide for
+Finland (7,453 against 7,480), France (27,699 against 27,903), Poland (76,657
+against 78,759) and the United Kingdom (16,078 against 16,118): exactly the
+countries for which the variable list notes that some diarists have no person
+weight (`WGHT2`), those without an individual interview in Finland, France and
+the United Kingdom, and those under 15 in Poland. Every record of the files
+has a person weight, so these diaries were left out of the release. Poland's
+share of diarists aged 10 to 17 is accordingly 2.5%, close to Serbia's 3.1%
+(diarists aged 15 or over), against 6 to 17% elsewhere except France (2.7%).
+The diary dates (`DDV3`, `DDV4`) also differ from the fieldwork years of
+Annex 1 for Belgium (January 2013 to January 2014, against 2012/2013),
+Luxembourg (2014, against 2014/2015), Poland (2013, against 2012/2013) and
+Romania (September 2011 to September 2012, against 2010/2011).
+
+Section 4 of the anonymisation guide calls `HHQ9_1` the personal income and
+`IND13_1` the household income. Its Annex 2, which the pipeline follows, gives
+`HHQ9_1` as the household's net monthly income band and `IND13_1` as the
+income from the main job.
 
 The Stage 01 coverage table also shows variables with no valid values in
 some countries: `DDV6` in ES and LU, `HHQ5` in BE, ES, FI and PL, `HHQ9_1` in

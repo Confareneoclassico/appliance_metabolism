@@ -2,22 +2,26 @@ import pandas as pd
 import numpy as np
 import gc
 import os
+import warnings
 from paths import RAW_DIR, PROCESSED_DIR, MAPPING_FILE
 from countries import COUNTRIES, CODE
 
 # Variables whose negative codes are recoded below (all but -1 become missing).
-# The labels are descriptive only; versions up to 1.0.1 named DDV1 Gender,
-# DDV3 Age group and DDV6 Education level (audit of November 2026, L12). DDV7
-# and IND44 are not listed: their negative codes are left for Stage 04.
+# The labels are descriptive only and follow the variable list of the
+# scientific use files (Annex 2); versions up to 1.0.1 named DDV1 Gender,
+# DDV3 Age group and DDV6 Education level (audit of November 2026, L12), and
+# 1.1.0 before the check of the codes named DDV6 "worked or studied" and HHC3
+# and HHC4 infants and children. DDV7 and IND44 are not listed: their
+# negative codes are left for Stage 04.
 SOCIO_LABELS = {
         'COUNTRY': 'Country',
         'DDV1': 'Day of the week of the diary day (1 = Sunday, 7 = Saturday)',
         'DDV3': 'Month of the diary day (recoded below to the first month of its quarter)',
-        'DDV6': 'Worked or studied (DDV7 is asked when DDV6 = 1)',
-        'HHC1': 'Household size',
-        'HHC3': 'Number of infants',
-        'HHC4': 'Number of children',
-        'HHC5': 'Number of persons aged 18 or over',
+        'DDV6': 'Employed or student (diary question 6a; DDV7 is asked when DDV6 = 1)',
+        'HHC1': 'Household size (top-coded at 5)',
+        'HHC3': 'Persons aged under 7 (top-coded at 2)',
+        'HHC4': 'Persons aged 7 to 17 (top-coded at 2)',
+        'HHC5': 'Persons aged 18 or over (1, or 2 for two or more)',
         'HHQ5': 'Tenure status (own or rent)',
         'HHQ9_1': 'Household income',
         'INC1': 'Sex',
@@ -33,7 +37,7 @@ SOCIO_LABELS = {
 # variables under lower-case names (e.g. 'ddv1', 'inc4_1'), which pd.concat
 # placed in separate columns that were later dropped, so those variables
 # appeared entirely missing for Romania.
-BASE_COLUMNS = ["YEAR", "HID", "PID", "DIARY", "COUNTRY", "DDV1", "DDV3", "DDV6", "DDV7",
+BASE_COLUMNS = ["YEAR", "HID", "PID", "DIARY", "COUNTRY", "DDV1", "DDV3", "DDV4", "DDV6", "DDV7",
                 "INC1", "INC2", "INC3", "INC4_1", "IND6_1", "HHQ5", "HHQ9_1", "IND22_1",
                 "IND44", "HHC1", "HHC3", "HHC4", "HHC5"]
 SERIES_PREFIXES = ["Mact", "Sactn", "Wherep", "Wpartner", "Wchild", "Wotherh"]
@@ -42,6 +46,87 @@ CANONICAL_BY_KEY = {c.upper(): c for c in CANONICAL_COLUMNS}
 
 DIAGNOSTIC_COLUMNS = ["DDV1", "DDV3", "DDV6", "DDV7", "HHC1", "HHC3", "HHC4", "HHC5",
                       "HHQ5", "HHQ9_1", "INC1", "INC2", "INC4_1", "IND6_1", "IND22_1", "IND44"]
+
+# Secondary code 999 (other unspecified time use, whose examples in the 2008
+# guidelines include "no activity recorded in the diary") is how the Dutch
+# files code an absent secondary activity: 89.9% of the Dutch at-home slots,
+# against at most 2.2% elsewhere (Italy). It carries no information about a
+# secondary activity in any country, so it is treated as none.
+NO_SECONDARY = 999
+
+# Same-day rule: the members of a household are matched by their diary
+# number (HID, DIARY), which is each person's own order of diaries, and the
+# 2008 guidelines postpone the diary of an unavailable member by 7, 14 or 21
+# days. A household-day whose members at home kept their diaries on
+# different weekdays (DDV1), or in different months (DDV3) or years (DDV4),
+# therefore mixes days and is left out. A postponement by whole weeks within
+# one month cannot be seen, because the day of the month (DDV2) is not in the
+# scientific use files. HETUS_SAME_DAY_RULE=0 keeps every household-day, as
+# versions up to 1.1.0 before the check of the codes did.
+SAME_DAY_RULE = os.environ.get("HETUS_SAME_DAY_RULE", "1").strip() != "0"
+
+
+def count_label(n):
+    """A count as it may be published: exact from 50, a class below."""
+    n = int(n)
+    if n == 0:
+        return "0"
+    return "<20" if n < 20 else ("20-49" if n < 50 else f"{n:,}")
+
+
+def drop_secondary_999(df):
+    """Print the share of at-home slots whose secondary code is 999, by
+    country, and set those codes to missing (slot by slot, to keep memory
+    low on the full files)."""
+    home = np.zeros(len(df), dtype=np.int64)
+    s999 = np.zeros(len(df), dtype=np.int64)
+    with warnings.catch_warnings():
+        # replacing columns one at a time fragments the frame, which is
+        # harmless here and cheaper in memory than replacing all 144 at once
+        warnings.simplefilter("ignore", pd.errors.PerformanceWarning)
+        for i in range(1, 145):
+            sec = pd.to_numeric(df[f"Sactn{i}"], errors="coerce")
+            at_home = df[f"Wherep{i}"].eq(1).to_numpy()
+            is999 = sec.eq(NO_SECONDARY).to_numpy()
+            home += at_home
+            s999 += is999 & at_home
+            if is999.any():
+                df[f"Sactn{i}"] = sec.mask(is999)
+    by_country = pd.DataFrame({"COUNTRY": df["COUNTRY"].to_numpy(), "home": home,
+                               "s999": s999}).groupby("COUNTRY").sum()
+    print("\nShare of at-home diarist-slots with secondary code 999, set to no secondary activity:")
+    for code, r in by_country.iterrows():
+        pct = 100 * r["s999"] / r["home"] if r["home"] else 0.0
+        print(f"  [secondary 999] {COUNTRIES[int(code)]}: {pct:.2f}%")
+    return df
+
+
+def same_day_rule(df, apply=SAME_DAY_RULE):
+    """Leave out the household-days (HID, DIARY) whose members kept their
+    diaries on different weekdays, or on the same weekday in different months
+    or years, and print the counts by country (classes below 50)."""
+    key = [df["HID"], df["DIARY"]]
+    persons = df.groupby(key)["PID"].transform("nunique")
+    weekday = pd.to_numeric(df["DDV1"], errors="coerce")
+    month = pd.to_numeric(df["MONTH"], errors="coerce")
+    year = pd.to_numeric(df["DDV4"], errors="coerce") if "DDV4" in df else pd.Series(0, index=df.index)
+    other_weekday = weekday.groupby(key).transform("nunique") > 1
+    other_month = (year * 100 + month).groupby(key).transform("nunique") > 1
+    multi = persons >= 2
+    a = multi & other_weekday
+    b = multi & ~other_weekday & other_month
+    days = df.assign(m=multi, a=a, b=b).groupby(["COUNTRY", "HID", "DIARY"])[["m", "a", "b"]].first()
+    counts = days.groupby(level="COUNTRY").sum()
+    print("\nSame-day rule: multi-diarist household-days whose members kept their diaries on")
+    print("different weekdays, or on the same weekday in another month or year"
+          + ("" if apply else " (kept: HETUS_SAME_DAY_RULE=0)"))
+    for code, r in counts.iterrows():
+        print(f"  [same-day rule] {COUNTRIES[int(code)]}: {count_label(r['m'])} multi-diarist, "
+              f"{count_label(r['a'])} other weekday, {count_label(r['b'])} same weekday, other month or year")
+    total = int(counts["a"].sum() + counts["b"].sum())
+    print(f"  [same-day rule] all: {count_label(counts['m'].sum())} multi-diarist, "
+          f"{count_label(total)} {'left out' if apply else 'kept'}")
+    return df[~(a | b)].copy() if apply else df
 
 
 def harmonise_column_names(df, country_code):
@@ -216,6 +301,9 @@ def process_data_in_chunks():
     # L1: versions up to 1.0.1 used pd.factorize, so codes followed the order
     # of the files actually loaded, while Stage 06 named them from the full list).
     combined_df['COUNTRY'] = combined_df['COUNTRY'].map(CODE).astype(int)
+    # The month itself is kept for the same-day rule before DDV3 is recoded
+    # to quarters (Germany delivers months grouped in quarters already)
+    combined_df['MONTH'] = pd.to_numeric(combined_df['DDV3'], errors='coerce').where(lambda m: m > 0)
     combined_df.loc[combined_df.DDV3.isin([2,3]), 'DDV3'] = 1
     combined_df.loc[combined_df.DDV3.isin([5,6]), 'DDV3'] = 4
     combined_df.loc[combined_df.DDV3.isin([8,9]), 'DDV3'] = 7
@@ -238,6 +326,13 @@ def process_data_in_chunks():
     filtered_df = combined_df[at_home_mask].copy()
     
     print(f"Number of records after filtering for at-home activities: {len(filtered_df)}")
+
+    # Secondary code 999 is no secondary activity, and household-days that mix
+    # diary days are left out (both from the check of the codes against the
+    # documentation, November 2026)
+    filtered_df = drop_secondary_999(filtered_df)
+    filtered_df = same_day_rule(filtered_df)
+    print(f"Number of records after the same-day rule: {len(filtered_df)}")
     
     # Now process the filtered data in chunks
     chunk_size = 50000

@@ -32,6 +32,18 @@ corrected pipeline. `tools/collect_exports.py` copies the exports of a run that
 may be shared, tested again with the publication rules, and Stage 09 pools the
 codes shared in fewer than 50 household-days.
 
+The codes were checked against the variable list of the scientific use files
+and the 2008 HETUS guidelines (`docs/PIPELINE.md` Section 3.17 and Section 6).
+Stage 01 leaves out the household-days whose members kept their diaries on
+different weekdays, or in different months or years (`HETUS_SAME_DAY_RULE=0`
+keeps them), and treats secondary code 999, with which the Dutch files mark an
+absent secondary activity, as no secondary activity, and Stage 09 does not
+count code 999 as a shared activity. In the mapping table, activities 422 and 424
+draw 0 W instead of 5 W. The labels of `DDV6`, `HHC3`, `HHC4` and `HHC5`
+follow the variable list. The collector also extracts the tagged lines of
+Stage 01 and stops when it finds none of the tables, and the runner prints the
+processed folder and how to collect the exports.
+
 Stage 03 computes the household power as a sparse product p = A w and runs in
 minutes instead of 10 to 15 hours, with the same values to the last bit (its
 former loop is kept in `pipeline/aggregate_household_loop_reference.py` and

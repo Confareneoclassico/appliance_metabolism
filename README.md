@@ -45,8 +45,10 @@ one-hot background variables to the clustering features, as before October
 2026 (for comparison only), `HETUS_STABILITY=1` and `HETUS_STABILITY_REPS`
 control the stability diagnostics of Stage 05, and `HETUS_RUN_ALL_DATA_PASS=1`
 restores the duplicate first pass of Stage 06, `HETUS_COUNTRIES` (for instance
-`BE,EE,FR`) restricts a run to some of the countries, and `HETUS_DRIVER_TOP_N`
-(6) sets how many variables Stage 11 draws. The export files follow Eurostat's
+`BE,EE,FR`) restricts a run to some of the countries, `HETUS_DRIVER_TOP_N`
+(6) sets how many variables Stage 11 draws, and `HETUS_SAME_DAY_RULE=0` keeps
+the household-days whose members kept their diaries on different days, which
+Stage 01 otherwise leaves out (`docs/PIPELINE.md` Section 3.17). The export files follow Eurostat's
 publication rules for HETUS (`pipeline/disclosure.py`): every cluster of fewer
 than 50 household-days is reported together with the largest cluster of its
 solution in every file and figure, so that every published size is exact and

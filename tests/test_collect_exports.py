@@ -51,3 +51,24 @@ def test_only_publishable_exports_are_copied(stage_dirs, tmp_path):
     extract = (out / "log_extract.txt").read_text().splitlines()
     assert extract == ["PCA: 144 columns reduced to 91 components",
                        "  Optimal number of clusters: 4 (no knee detected, fallback value)"]
+
+
+def test_tagged_stage01_lines_are_extracted(stage_dirs, tmp_path):
+    proc = stage_dirs["HETUS_PROCESSED_DIR"]
+    pd.DataFrame({"cluster": [0], "size": [400]}).to_csv(proc / "cluster_summary.csv", index=False)
+    log = tmp_path / "run_log.txt"
+    log.write_text("Loaded 312000 rows\n"
+                   "  [secondary 999] NL: 89.90%\n"
+                   "  [same-day rule] LU: 1,285 multi-diarist, 20-49 other weekday, 20-49 same weekday\n"
+                   "BE_1 1 0.0\n")
+    done = run_collector(stage_dirs, tmp_path / "share", log)
+    extract = (tmp_path / "share" / "log_extract.txt").read_text().splitlines()
+    assert extract == ["  [secondary 999] NL: 89.90%",
+                       "  [same-day rule] LU: 1,285 multi-diarist, 20-49 other weekday, 20-49 same weekday"]
+    assert done.returncode == 0
+
+
+def test_wrong_processed_folder_is_reported(stage_dirs, tmp_path):
+    done = run_collector(stage_dirs, tmp_path / "share")       # nothing in the folder
+    assert done.returncode == 1
+    assert "None of the tables was found" in done.stdout
