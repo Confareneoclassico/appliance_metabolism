@@ -3,23 +3,28 @@ import numpy as np
 import gc
 import os
 from paths import RAW_DIR, PROCESSED_DIR, MAPPING_FILE
+from countries import COUNTRIES, CODE
 
+# Variables whose negative codes are recoded below (all but -1 become missing).
+# The labels are descriptive only; versions up to 1.0.1 named DDV1 Gender,
+# DDV3 Age group and DDV6 Education level (audit of November 2026, L12). DDV7
+# and IND44 are not listed: their negative codes are left for Stage 04.
 SOCIO_LABELS = {
         'COUNTRY': 'Country',
-        'DDV1': 'Gender',
-        'DDV3': 'Age group',
-        'DDV6': 'Education level',
+        'DDV1': 'Day of the week of the diary day (1 = Sunday, 7 = Saturday)',
+        'DDV3': 'Month of the diary day (recoded below to the first month of its quarter)',
+        'DDV6': 'Worked or studied (DDV7 is asked when DDV6 = 1)',
         'HHC1': 'Household size',
         'HHC3': 'Number of infants',
         'HHC4': 'Number of children',
-        'HHC5': 'Number of adults',
-        'HHQ5': 'Own/rent house',
-        'HHQ9_1': 'Income',
-        'INC1': 'Gender',
-        'INC2': 'Age',
-        'INC4_1': 'Economic status',
-        'IND6_1': 'Employment status',
-        'IND22_1': 'Education',
+        'HHC5': 'Number of persons aged 18 or over',
+        'HHQ5': 'Tenure status (own or rent)',
+        'HHQ9_1': 'Household income',
+        'INC1': 'Sex',
+        'INC2': 'Age group',
+        'INC4_1': 'Main activity status',
+        'IND6_1': 'Job type',
+        'IND22_1': 'Educational attainment',
         'IND42_1': 'Citizenship'
     }
 
@@ -131,7 +136,11 @@ def process_chunk(chunk):
                     current_energy += activity_power_map[primary_activity_code]
                     current_mr = current_mr_map.get(primary_activity_code, 0)
                 
-                if pd.notna(secondary_activity_code) and secondary_activity_code in activity_power_map:
+                # A code recorded as both main and secondary activity counts
+                # once, as in the household rule of Stage 03 (audit of November
+                # 2026, L10: it used to count twice in this per-diarist series)
+                if (pd.notna(secondary_activity_code) and secondary_activity_code in activity_power_map
+                        and secondary_activity_code != primary_activity_code):
                     current_energy += activity_power_map[secondary_activity_code]
                     secondary_mr = current_mr_map.get(secondary_activity_code, 0)
                     current_mr = max(current_mr, secondary_mr)
@@ -148,9 +157,30 @@ def process_chunk(chunk):
     
     return chunk
 
+def countries_to_load():
+    """The countries of the run: all of COUNTRIES, or the comma-separated
+    subset in HETUS_COUNTRIES (for instance to run without a country whose
+    file is not available)."""
+    selected = os.environ.get("HETUS_COUNTRIES", "")
+    if not selected.strip():
+        return list(COUNTRIES)
+    names = [c.strip().upper() for c in selected.split(",") if c.strip()]
+    unknown = [c for c in names if c not in CODE]
+    if unknown:
+        raise ValueError(f"HETUS_COUNTRIES: unknown country code(s) {unknown}; "
+                         f"known codes are {COUNTRIES}")
+    return [c for c in COUNTRIES if c in names]
+
+
 def process_data_in_chunks():
-    countries = ['BE', 'DE', 'EE', 'EL', 'ES', 'FI', 'FR', 'HU', 'IT', 'LU', 'NL', 'NO', 'PL', 'RO', 'RS', 'UK']
-    country_codes_map = {country: idx for idx, country in enumerate(countries, 1)}
+    countries = countries_to_load()
+    # A missing file stops the run rather than being skipped, so that a run
+    # cannot silently leave a country out (audit of November 2026, L1)
+    missing = [c for c in countries if not (RAW_DIR / f"{c}.csv").is_file()]
+    if missing:
+        raise FileNotFoundError(
+            f"raw file(s) not found in {RAW_DIR}: {', '.join(c + '.csv' for c in missing)}. "
+            "Add them, or list the countries to use in HETUS_COUNTRIES.")
     
     all_chunks = []
     
@@ -159,26 +189,20 @@ def process_data_in_chunks():
         # Raw files are read from RAW_DIR (paths.py): data/raw/ by default, or
         # the folder given by the HETUS_DATA_DIR environment variable.
         file_path = RAW_DIR / f"{country_code}.csv"
-        try:
-            print(f"Loading data for {country_code}...")
-            chunk = pd.read_csv(file_path)
-            chunk = harmonise_column_names(chunk, country_code)
+        print(f"Loading data for {country_code}...")
+        chunk = pd.read_csv(file_path)
+        chunk = harmonise_column_names(chunk, country_code)
 
-            # Make HID and PID unique by adding country prefix. Whole-column
-            # assignment (not .loc) lets the dtype change from int to string,
-            # which recent pandas versions require.
-            chunk['HID'] = country_code + '_' + chunk['HID'].astype(str)
-            chunk['PID'] = country_code + '_' + chunk['PID'].astype(str)
-            
-            all_chunks.append(chunk)
-            print(f"Finished loading {country_code}.")
-        except FileNotFoundError:
-            print(f"Error: File not found for {country_code}. Skipping...")
-        except Exception as e:
-            print(f"An error occurred while loading {country_code}: {e}")
-    
-    if not all_chunks:
-        return pd.DataFrame()
+        # Make HID and PID unique by adding country prefix. Whole-column
+        # assignment (not .loc) lets the dtype change from int to string,
+        # which recent pandas versions require.
+        chunk['HID'] = country_code + '_' + chunk['HID'].astype(str)
+        chunk['PID'] = country_code + '_' + chunk['PID'].astype(str)
+        # The country is the one of the file (its code is set below)
+        chunk['COUNTRY'] = country_code
+        
+        all_chunks.append(chunk)
+        print(f"Finished loading {country_code}.")
     
     # Combine all data first
     combined_df = pd.concat(all_chunks, ignore_index=True)
@@ -187,16 +211,24 @@ def process_data_in_chunks():
     # Apply transformations to the full dataset
     combined_df = combined_df.copy()
     # Whole-column assignment so that the dtype can change from string to int
-    # (required by pandas 3). Codes follow the load order of `countries`.
-    combined_df['COUNTRY'] = pd.factorize(combined_df['COUNTRY'])[0]
+    # (required by pandas 3). The code of a country is its position in
+    # countries.COUNTRIES, whichever files are read (audit of November 2026,
+    # L1: versions up to 1.0.1 used pd.factorize, so codes followed the order
+    # of the files actually loaded, while Stage 06 named them from the full list).
+    combined_df['COUNTRY'] = combined_df['COUNTRY'].map(CODE).astype(int)
     combined_df.loc[combined_df.DDV3.isin([2,3]), 'DDV3'] = 1
     combined_df.loc[combined_df.DDV3.isin([5,6]), 'DDV3'] = 4
     combined_df.loc[combined_df.DDV3.isin([8,9]), 'DDV3'] = 7
     combined_df.loc[combined_df.DDV3.isin([11,12]), 'DDV3'] = 10
     
+    # Negative codes are missing answers, except -1, which the scientific use
+    # files use for "not applicable" (job items for people without a job,
+    # education and main activity for diarists under 15). It is kept so that
+    # Stage 07 counts item non-response among the units an item applies to
+    # (audit of November 2026, D5); Stage 04 recodes it to -98.
     for col in SOCIO_LABELS.keys():
         if col in combined_df.columns and pd.api.types.is_numeric_dtype(combined_df[col]):
-            combined_df.loc[combined_df[col] < 0, col] = np.nan
+            combined_df.loc[(combined_df[col] < 0) & (combined_df[col] != -1), col] = np.nan
     
     print(f"Combined data from {len(countries)} countries. Total rows: {len(combined_df)}")
     
