@@ -9,14 +9,19 @@ lu = pd.read_csv(PROCESSED_DIR / "lu_data_at_home_with_diarist_metrics.csv")
 for col in ["Diarist_Energy_Demand_Series", "Diarist_Metabolic_Rate_Series"]:
     lu[col] = lu[col].apply(lambda x: literal_eval(x) if isinstance(x, str) else x)
 
-# Load mapping for power and MR per activity
+# Load mapping for power and MR per activity. The key is the HETUS activity
+# code in column `activity`, as in Stages 01 and 03. Versions up to 1.0.1 used
+# `TUS_activity_code`, the code of the activity classification, which differs
+# from `activity` in every row (110 against 11 for sleep), so no code was
+# found, both rates were 0 and the dominant activity was always the main one
+# (audit of November 2026, L11). Only the metabolic columns depend on it.
 hetus = pd.read_csv(MAPPING_FILE)
 mr_maps = {
-    "MR_infant_Watts": hetus.set_index("TUS_activity_code")["MR_infant_Watts"].to_dict(),
-    "MR_child_Watts" : hetus.set_index("TUS_activity_code")["MR_child_Watts"].to_dict(),
-    "MR_teenager_Watts": hetus.set_index("TUS_activity_code")["MR_teenager_Watts"].to_dict(),
-    "MR_adult_Watts": hetus.set_index("TUS_activity_code")["MR_adult_Watts"].to_dict(),
-    "MR_senior_Watts": hetus.set_index("TUS_activity_code")["MR_senior_Watts"].to_dict(),
+    "MR_infant_Watts": hetus.set_index("activity")["MR_infant_Watts"].to_dict(),
+    "MR_child_Watts" : hetus.set_index("activity")["MR_child_Watts"].to_dict(),
+    "MR_teenager_Watts": hetus.set_index("activity")["MR_teenager_Watts"].to_dict(),
+    "MR_adult_Watts": hetus.set_index("activity")["MR_adult_Watts"].to_dict(),
+    "MR_senior_Watts": hetus.set_index("activity")["MR_senior_Watts"].to_dict(),
 }
 
 # Helper to map INC2 to MR column (assume diarist adult unless specified otherwise)
