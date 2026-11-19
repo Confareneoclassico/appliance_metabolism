@@ -12,7 +12,8 @@ from itertools import combinations
 import warnings
 import os
 from paths import PROCESSED_DIR, FIGURES_DIR
-from disclosure import protect, MIN_N_PUBLISH
+from disclosure import protect, check_export, published_groups, MIN_N_UNFLAGGED
+from peaks import circular_peak_stats, clock_str
 warnings.filterwarnings("ignore")
 
 # --- Configuration of the clustering (October 2026 re-run) ------------------
@@ -118,6 +119,7 @@ for i in k_range:
 kl = KneeLocator(k_range, wcss, curve='convex', direction='decreasing')
 optimal_k = kl.elbow
 
+K_FROM_KNEE = optimal_k is not None
 if optimal_k is None:
     print("Warning: Could not automatically detect elbow. Using k=8 as default based on previous analysis.")
     optimal_k = 8 # Default if elbow not found, based on previous analysis
@@ -127,7 +129,7 @@ else:
 # --- Improved Elbow Method Plot ---
 plt.figure(figsize=(10, 7))
 plt.plot(k_range, wcss, marker='o', linestyle='-' , color='#1f77b4', linewidth=2)
-plt.axvline(x=optimal_k, color='#d62728', linestyle='--', alpha=0.8, label=f'Optimal K = {optimal_k}' , linewidth=1.5)
+plt.axvline(x=optimal_k, color='#d62728', linestyle='--', alpha=0.8, label=(f'Knee at K = {optimal_k}' if K_FROM_KNEE else f'K = {optimal_k} (no knee found, fallback value)'), linewidth=1.5)
 plt.title('Elbow Method for Optimal K', fontsize=16, fontweight='bold')
 plt.xlabel('Number of Clusters (K)' , fontsize=14)
 plt.ylabel('Within-Cluster Sum of Squares (WCSS)' , fontsize=14)
@@ -149,6 +151,24 @@ print(f"Clustering completed with {optimal_k} clusters.")
 print("Cluster sizes:")
 cluster_counts = clustering_data["cluster"].value_counts().sort_index()
 print(cluster_counts)
+
+# Groups under which the clusters are published (disclosure.py, Option A of the
+# audit of November 2026): a cluster of fewer than MIN_N_UNFLAGGED
+# household-days is reported together with the largest cluster in every export
+# and figure, so that no published size is below MIN_N_UNFLAGGED and none can
+# be derived from the total. In the run of 14 October 2026 the smallest global
+# cluster has exactly 50 household-days, so every cluster is published alone.
+pub_groups, small_clusters, largest_cluster = published_groups(clustering_data["cluster"])
+pub_ids = sorted(int(g) for g in pd.unique(pub_groups))
+pub_sizes = pd.Series(pub_groups).value_counts()
+if small_clusters:
+    print(f"Clusters {small_clusters} have fewer than {MIN_N_UNFLAGGED} household-days and "
+          f"are reported together with the largest, cluster {largest_cluster}.")
+
+
+def n_merged(g):
+    """Number of small clusters reported together with group g."""
+    return len(small_clusters) if g == largest_cluster else 0
 
 # --- Optional stability diagnostics (HETUS_STABILITY=1) ----------------------
 # Silhouette width on a random subsample of 10,000 household-days, and, over
@@ -183,17 +203,21 @@ if RUN_STABILITY:
                     best = max(best, np.sum(in_k & in_m) / union)
             jaccard[b, k] = best
         print(f"  half-sample {b + 1}/{STABILITY_REPS}: ARI = {aris[-1]:.3f}")
+    # One row per published group. The Jaccard similarities of the largest
+    # cluster are its own, its size that of the group it is published with.
     stability = pd.DataFrame({
-        'cluster': range(optimal_k),
-        'size': [int((labels_full == k).sum()) for k in range(optimal_k)],
-        'jaccard_mean': np.nanmean(jaccard, axis=0),
-        'jaccard_min': np.nanmin(jaccard, axis=0),
+        'cluster': pub_ids,
+        'n_small_clusters_merged': [n_merged(g) for g in pub_ids],
+        'size': [int(pub_sizes[g]) for g in pub_ids],
+        'jaccard_mean': np.nanmean(jaccard, axis=0)[pub_ids],
+        'jaccard_min': np.nanmin(jaccard, axis=0)[pub_ids],
     })
     stability['ari_mean'] = float(np.mean(aris))
     stability['ari_min'] = float(np.min(aris))
     stability['silhouette'] = float(sil)
-    # Disclosure control (disclosure.py): no cluster-wise result for a cluster
-    # of fewer than 20 household-days, a flag for one of 20 to 49
+    # Disclosure control (disclosure.py): every published group has at least
+    # MIN_N_UNFLAGGED household-days, so protect changes nothing but adds the
+    # n_class and withheld columns
     protect(stability, n_col='size', stat_cols=['jaccard_mean', 'jaccard_min']).to_csv(
         PROCESSED_DIR / "cluster_stability.csv", index=False)
     print(stability.round(3).to_string(index=False))
@@ -611,11 +635,16 @@ def slot_clock(slot):
     """HH:MM clock time of a 10-minute slot (slot 0 = 04:00)."""
     minutes = (DIARY_START_HOUR * 60 + 10 * slot) % (24 * 60)
     return f"{minutes // 60:02d}:{minutes % 60:02d}"
-cluster_sizes = clustering_data["cluster"].value_counts().reindex(range(optimal_k), fill_value=0)
+# Mean profile of every published group (a cluster, or the largest cluster
+# with the small ones)
 mean_profiles = {
-    k: clustering_data.loc[clustering_data["cluster"] == k, energy_columns].mean(axis=0).values
-    for k in range(optimal_k)
+    g: clustering_data.loc[pub_groups == g, energy_columns].mean(axis=0).values
+    for g in pub_ids
 }
+
+
+def group_label(g):
+    return f"Cluster {g}" + (f" and {n_merged(g)} small" if n_merged(g) else "")
 
 
 def style_profile_axes(ax, tick_size):
@@ -633,10 +662,12 @@ def style_profile_axes(ax, tick_size):
 
 # Single panel with all clusters (the figure used in the article)
 fig, ax = plt.subplots(figsize=(10, 6))
-for k in range(optimal_k):
+# Every published group has at least MIN_N_UNFLAGGED household-days, so its
+# size is given exactly (audit of November 2026, L6 and Option A)
+for k in pub_ids:
     ax.plot(time_points, mean_profiles[k], color=SERIES_COLOURS[k % 8],
             linestyle="-" if k < 8 else "--", linewidth=2.0,
-            label=f"Cluster {k} (n = {cluster_sizes[k]:,})")
+            label=f"{group_label(k)} (n = {int(pub_sizes[k]):,})")
 ax.set_xticks(range(0, 25, 3))
 ax.set_xticklabels(clock_labels(range(0, 25, 3)))
 ax.set_xlabel("Time of day", fontsize=16, color=INK)
@@ -652,24 +683,25 @@ print("Combined 10-minute plot saved to cluster_energy_profiles_10min_combined.p
 # Small multiples: one cluster per panel, the other clusters in grey for
 # context. An alternative to the single panel when the lines overlap.
 n_cols = 3
-n_rows = int(np.ceil(optimal_k / n_cols))
+n_rows = int(np.ceil(len(pub_ids) / n_cols))
 fig, axes = plt.subplots(n_rows, n_cols, figsize=(10, 2.6 * n_rows + 0.9),
                          sharex=True, sharey=True, squeeze=False)
 for idx in range(n_rows * n_cols):
     ax = axes[idx // n_cols][idx % n_cols]
-    if idx >= optimal_k:
+    if idx >= len(pub_ids):
         ax.set_visible(False)
         # Show x tick labels on the panel above an empty slot
         if idx - n_cols >= 0:
             axes[(idx - n_cols) // n_cols][idx % n_cols].xaxis.set_tick_params(labelbottom=True)
         continue
-    for j in range(optimal_k):
-        if j != idx:
+    g = pub_ids[idx]
+    for j in pub_ids:
+        if j != g:
             ax.plot(time_points, mean_profiles[j], color=AXIS, linewidth=0.9)
-    ax.plot(time_points, mean_profiles[idx], color=SERIES_COLOURS[0], linewidth=2.0)
-    share = 100 * cluster_sizes[idx] / len(clustering_data)
+    ax.plot(time_points, mean_profiles[g], color=SERIES_COLOURS[0], linewidth=2.0)
+    share = 100 * pub_sizes[g] / len(clustering_data)
     share_txt = f"{share:.1f}%" if share >= 0.1 else "<0.1%"
-    ax.set_title(f"Cluster {idx} (n = {cluster_sizes[idx]:,}, {share_txt})",
+    ax.set_title(f"{group_label(g)} (n = {int(pub_sizes[g]):,}, {share_txt})",
                  fontsize=13, color=INK, loc="left")
     ax.set_xticks(range(0, 25, 6))
     ax.set_xticklabels(clock_labels(range(0, 25, 6)))
@@ -730,22 +762,28 @@ print(f"Clustering results saved to {PROCESSED_DIR}/clustering_results.csv")
 
 # Create a detailed summary of cluster characteristics
 cluster_summary = []
-for cluster_id in range(optimal_k):
-    cluster_data = clustering_data[clustering_data["cluster"] == cluster_id]
+for cluster_id in pub_ids:
+    cluster_data = clustering_data[pub_groups == cluster_id]
     energy_data = cluster_data[energy_columns].values
     
     summary = {
         'cluster': cluster_id,
+        'n_small_clusters_merged': n_merged(cluster_id),
         'size': len(cluster_data),
         # Daily energy (Wh) = sum of the 144 mean-power values (W) x 10/60 h.
         # The peak is the highest 10-minute mean power of each household-day,
         # in W (this column was previously mislabelled avg_peak_energy_wh).
         'avg_daily_energy_wh': (np.sum(energy_data, axis=1) * 10 / 60).mean(),
         'avg_peak_power_w': np.max(energy_data, axis=1).mean(),
-        # Clock hour of the linear mean of the household-day peak slots
-        # (slot 0 = 04:00). Stage 08 gives the circular mean.
-        'avg_peak_time': int((DIARY_START_HOUR + np.argmax(energy_data, axis=1).mean() / 6) % 24),
-        'energy_std': np.std(energy_data),
+        # Circular mean clock time of the household-day peaks, with ties at
+        # the daily maximum shared and days without demand left out (peaks.py;
+        # versions up to 1.0.1 gave the clock hour of the linear mean of the
+        # first peak slot). Stage 08 gives the circular SD.
+        'peak_time_circular_mean': clock_str(circular_peak_stats(energy_data)[0]),
+        # Standard deviation of daily energy across the cluster's household-
+        # days, in Wh (energy_std in versions up to 1.0.1 was the pooled SD of
+        # the 10-minute power values, in W)
+        'daily_energy_sd_wh': (np.sum(energy_data, axis=1) * 10 / 60).std(),
         # Maximum of the cluster's mean profile (the coincident peak per
         # household, plotted in Figure 2) and its clock time
         'mean_profile_peak_w': mean_profiles[cluster_id].max(),
@@ -761,29 +799,25 @@ for cluster_id in range(optimal_k):
     cluster_summary.append(summary)
 
 cluster_summary_df = pd.DataFrame(cluster_summary)
-# The export follows Eurostat's publication rules for HETUS (disclosure.py).
-# No global cluster has fewer than MIN_N_PUBLISH household-days (the smallest
-# has 50). If one had, its profile could be recovered from the published mean
-# profile of the whole sample, and its household-days would have to be reported
-# with the largest cluster, as Stage 06 does for the stratified solutions.
-if (np.asarray(cluster_sizes) < MIN_N_PUBLISH).any():
-    print(f"WARNING: a global cluster has fewer than {MIN_N_PUBLISH} household-days. "
-          "Report it with the largest cluster before sharing the exports "
-          "(see collect_cluster_profiles in Stage 06).")
-summary_stat_cols = [c for c in cluster_summary_df.columns if c not in ('cluster', 'size')]
-protect(cluster_summary_df, n_col='size', stat_cols=summary_stat_cols).to_csv(
+# The export follows Eurostat's publication rules for HETUS (disclosure.py):
+# one row per published group, each of at least MIN_N_UNFLAGGED household-days
+summary_stat_cols = [c for c in cluster_summary_df.columns
+                     if c not in ('cluster', 'size', 'n_small_clusters_merged')]
+protect(cluster_summary_df, n_col='size', stat_cols=summary_stat_cols, flagged_results=False).to_csv(
     PROCESSED_DIR / "cluster_summary.csv", index=False)
 print(f"Cluster summary saved to {PROCESSED_DIR}/cluster_summary.csv")
 
 # Mean profile of each global cluster (W in each 10-minute slot, slot 0 =
 # 04:00), so that Figure 2 can be redrawn and checked without the microdata
 profile_rows = []
-for cluster_id in range(optimal_k):
-    row = {'cluster': cluster_id, 'n': int(cluster_sizes[cluster_id])}
+for cluster_id in pub_ids:
+    row = {'cluster': cluster_id, 'n_small_clusters_merged': n_merged(cluster_id),
+           'n': int(pub_sizes[cluster_id])}
     row.update({f'P_{t:03d}': float(mean_profiles[cluster_id][t]) for t in range(len(energy_columns))})
     profile_rows.append(row)
-protect(pd.DataFrame(profile_rows), n_col='n').to_csv(
-    PROCESSED_DIR / "cluster_mean_profiles.csv", index=False)
+profiles_table = protect(pd.DataFrame(profile_rows), n_col='n', flagged_results=False)
+check_export(profiles_table, n_col='n')
+profiles_table.to_csv(PROCESSED_DIR / "cluster_mean_profiles.csv", index=False)
 print(f"Cluster mean profiles saved to {PROCESSED_DIR}/cluster_mean_profiles.csv")
 
 # Create comprehensive statistical summary
