@@ -19,9 +19,9 @@ authors:
     affiliation: >-
       Gdansk University of Technology; Barcelona School of Management,
       Universitat Pompeu Fabra
-version: 1.0.0
-doi: 10.5281/zenodo.23412742
-date-released: 2026-10-16
+version: 1.0.1
+doi: 10.5281/zenodo.23412741
+date-released: 2026-11-19
 repository-code: https://github.com/Confareneoclassico/appliance_metabolism
 license:
   - MIT
