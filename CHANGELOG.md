@@ -1,6 +1,16 @@
 # Changelog
 
+## Unreleased
+
+The lookup table from activity code to appliance power and metabolic rate is
+now part of the repository, as `data/HETUS_mapped_data.csv` under CC BY 4.0,
+and `pipeline/paths.py` reads it from there (or from `HETUS_MAPPING_FILE`),
+falling back to a copy next to the raw files. The README and `docs/PIPELINE.md`
+no longer describe it as a Eurostat file.
+
 ## 1.0.1 (19 November 2026)
+
+doi:10.5281/zenodo.24368824
 
 This version withdraws published figures from which the sizes of small
 clusters could be derived. The code is unchanged, and so are the results quoted
