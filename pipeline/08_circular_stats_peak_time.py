@@ -1,11 +1,13 @@
-import pandas as pd
-import numpy as np
-from scipy.stats import circstd, circmean
+import glob
 import math
 import os
-import glob
+
+import numpy as np
+import pandas as pd
+
 from paths import PROCESSED_DIR, COUNTRY_DIR, DAYTYPE_DIR, COUNTRY_DAYTYPE_DIR
-from disclosure import protect
+from disclosure import protect, published_groups, MIN_N_UNFLAGGED
+from peaks import circular_peak_stats, clock_str
 
 # --- Configuration ---
 ENERGY_COLUMNS = [f"Household_Energy_W_{i}" for i in range(144)]
@@ -29,76 +31,46 @@ FILES_TO_PROCESS.extend(country_nonwork_files)
 # 0 as midnight, which put every circular mean four hours early (the circular
 # standard deviation is unaffected by the offset).
 DIARY_START_HOUR = 4
-# The output follows Eurostat's publication rules for HETUS (disclosure.py):
-# clusters of fewer than 20 household-days are listed without size or
-# statistics, clusters of 20 to 49 are flagged and listed without their size,
-# and the other sizes are rounded within a solution in which a cluster is
-# withheld or flagged.
+# The output follows Eurostat's publication rules for HETUS (disclosure.py).
+# From version 1.1.0 the statistics are computed for the published groups of
+# each solution: every cluster of fewer than 50 household-days is reported with
+# the largest cluster (published_groups), so that every group in the file has
+# at least 50 household-days, its size can be given exactly, and no small
+# cluster can be derived by subtraction from the solution's total.
 CIRCULAR_STAT_COLS = ['n_zero_demand', 'circular_mean_time',
                       'circular_std_rad', 'circular_std_deg']
 # --- End Configuration ---
 
-def calculate_peak_time_in_radians(df, energy_cols):
-    """
-    Calculates the time of peak energy consumption for each household and converts it to radians.
-    """
-    # Find the index (0 to 143) of the maximum energy consumption
-    peak_index = df[energy_cols].idxmax(axis=1).str.replace('Household_Energy_W_', '', regex=False).astype(int)
-    
-    # Convert slot index to clock hour (0 to 23.9833...), slot 0 = 04:00
-    peak_hour = (DIARY_START_HOUR + peak_index * (24 / 144)) % 24
-    
-    # Convert hour (0-24) to radians (0-2*pi)
-    peak_time_radians = (peak_hour / 24) * 2 * math.pi
-    
-    return peak_time_radians
-
 def circular_statistics_summary(df, energy_cols, file_name):
-    """
-    Calculates circular mean and standard deviation of peak time for each cluster.
-    """
+    """Circular mean and standard deviation of the daily peak time for each
+    published group of a solution. Ties at the daily maximum share the weight
+    of their household-day and days without demand are left out (peaks.py,
+    audit defect D4)."""
     print(f"\n--- Circular Statistics Summary for: {file_name} ---")
-    
-    # Calculate peak time in radians for all households
-    df['peak_time_rad'] = calculate_peak_time_in_radians(df, energy_cols)
-    
+    groups, small, largest = published_groups(df['cluster'])
+    energy = df[energy_cols].to_numpy(dtype=float)
     summary_data = []
-    for cluster_id in df['cluster'].unique():
-        cluster_data = df[df['cluster'] == cluster_id]
-        
-        if len(cluster_data) < 2:
-            summary_data.append({'file': file_name, 'cluster': cluster_id,
-                                 'n_households': len(cluster_data)})
-            continue
-            
-        angles = cluster_data['peak_time_rad'].values
-        
-        # Calculate circular mean (mu) and standard deviation (rho)
-        mean_rad = circmean(angles)
-        std_rad = circstd(angles)
-        
-        # Convert mean back to hour (0-24)
-        mean_hour = (mean_rad / (2 * math.pi)) * 24
-        
-        # Convert mean hour to HH:MM format
-        hours = int(mean_hour)
-        minutes = int((mean_hour - hours) * 60)
-        mean_time_str = f"{hours:02d}:{minutes:02d}"
-        
+    for g in sorted(pd.unique(groups)):
+        members = groups == g
+        mean_h, std_rad, n_zero = circular_peak_stats(energy[members])
         summary_data.append({
             'file': file_name,
-            'cluster': cluster_id,
-            'n_households': len(cluster_data),
-            # Household-days with no electricity demand all day have no peak;
-            # idxmax assigns them slot 0 (04:00). Reported so their weight in
-            # the statistics can be judged.
-            'n_zero_demand': int((cluster_data[energy_cols].sum(axis=1) == 0).sum()),
-            'circular_mean_time': mean_time_str,
+            'cluster': int(g),
+            'n_small_clusters_merged': len(small) if g == largest else 0,
+            'n_households': int(members.sum()),
+            # Household-days with no electricity demand all day have no peak
+            # and are left out of the statistics
+            'n_zero_demand': n_zero,
+            'circular_mean_time': clock_str(mean_h),
             'circular_std_rad': std_rad,
-            'circular_std_deg': math.degrees(std_rad)
+            'circular_std_deg': math.degrees(std_rad) if np.isfinite(std_rad) else np.nan,
         })
-        
-    return pd.DataFrame(summary_data).sort_values(by='cluster')
+    out = pd.DataFrame(summary_data)
+    if out['n_households'].sum() != len(df) or (out['n_households'] < MIN_N_UNFLAGGED).any():
+        raise ValueError(f"{file_name}: the published groups do not cover the solution "
+                         f"or one has fewer than {MIN_N_UNFLAGGED} household-days")
+    return out
+
 
 def main():
     all_results = []
