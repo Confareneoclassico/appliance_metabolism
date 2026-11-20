@@ -11,7 +11,9 @@ outputs and seconds) and RUNS/run_iiiii.npz (the mean profiles by country and
 day type, and their numbers of household-days). A run whose files exist is
 skipped, so an interrupted sample resumes where it stopped, and --first N runs
 only the first N points (a pilot). RUNS/design.json records the settings that
-the results depend on; resuming with other settings is refused.
+the results depend on, the versions of Python, NumPy, SciPy and scikit-learn
+included; resuming with other settings, or in an environment with other
+versions, is refused.
 
 W workers each memory-map the bundle and use T threads. K-means takes most of
 the time, so try a pilot of a few runs with, say, --workers 1 --threads 8 and
@@ -43,11 +45,22 @@ SAMPLE_SEED = 20261119
 MODEL = None
 
 
+def library_versions():
+    """Versions of Python and of the libraries whose arithmetic the runs rest
+    on (PCA and K-means): runs made with other versions can differ."""
+    import platform
+    import scipy
+    import sklearn
+    return {"python": platform.python_version(), "numpy": np.__version__,
+            "scipy": scipy.__version__, "scikit-learn": sklearn.__version__}
+
+
 def settings(args, meta):
     return {"m": args.m, "sample_seed": SAMPLE_SEED, "uniform_in_watts": bool(args.uniform_in_watts),
             "n_init": args.n_init, "bundle": str(Path(args.bundle).resolve()),
             "bundle_created": meta.get("created"), "household_days": meta.get("household_days"),
-            "factors": [f.id for f in design.FACTORS], "dummies": design.DUMMIES}
+            "factors": [f.id for f in design.FACTORS], "dummies": design.DUMMIES,
+            "versions": library_versions()}
 
 
 def jsonable(x):
@@ -91,7 +104,7 @@ def one_run(i, x, u, runs):
              countries=np.array([*(MODEL.meta["countries"]), "ALL"]))
     os.replace(tmp, npz)
     record = {"run": i, "seconds": seconds, "coordinates": [float(v) for v in u],
-              "factors": jsonable(x), "outputs": out}
+              "factors": jsonable(x), "outputs": out, "versions": library_versions()}
     tmp = js.with_suffix(".tmp")
     tmp.write_text(json.dumps(record, indent=1, default=float))
     os.replace(tmp, js)
@@ -123,7 +136,17 @@ def main(argv=None):
     dpath = args.runs / "design.json"
     if dpath.is_file():
         have = json.loads(dpath.read_text())
-        differ = [k for k in wanted if k != "m" and have.get(k) != wanted[k]]
+        if "versions" not in have:          # a folder begun before the versions were kept
+            print(f"Recording the library versions of this environment in {dpath}: "
+                  + ", ".join(f"{k} {v}" for k, v in wanted["versions"].items()))
+            have["versions"] = wanted["versions"]
+        if have["versions"] != wanted["versions"]:
+            sys.exit(f"{args.runs} holds runs made with "
+                     + ", ".join(f"{k} {v}" for k, v in have["versions"].items())
+                     + ", and this environment has "
+                     + ", ".join(f"{k} {v}" for k, v in wanted["versions"].items())
+                     + ": activate the environment of the earlier runs")
+        differ = [k for k in wanted if k not in ("m", "versions") and have.get(k) != wanted[k]]
         if differ:
             sys.exit(f"{args.runs} holds runs made with other settings ({', '.join(differ)}): "
                      "use another folder")

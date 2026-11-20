@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+`gsa.run` records the versions of Python, NumPy, SciPy and scikit-learn in
+the folder of the runs and in every run, and refuses to resume in an
+environment with other versions; `gsa.collect` reports the versions found.
+
 The console follows the publication rules as the exports do (`docs/PIPELINE.md`
 Section 3.18). Stage 10 pools the largest numbers of diarists into one class
 of at least 50 household-days and gives no minimum or maximum, in the console
