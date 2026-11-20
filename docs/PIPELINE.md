@@ -34,8 +34,9 @@ Compendium of Physical Activities behind the metabolic rate (`MET_info`), the
 representative appliance power in W (`Appliance_Power_Watts`), the metabolic
 rate in W for infants, children, teenagers, adults and seniors
 (`MR_infant_Watts` to `MR_senior_Watts`), and flags for activities that need
-light (`Light_use`) or hot water (`Water_use`), which no stage reads at
-present. Its 108 codes have whole-watt powers, 28 of them above zero (30 up to
+light (`Light_use`) or hot water (`Water_use`), which no stage of the
+pipeline reads; the sensitivity analysis reads `Light_use` for its lighting
+factor X19 (`docs/GSA.md`), with 342 and 343 corrected (Section 3.17, K7). Its 108 codes have whole-watt powers, 28 of them above zero (30 up to
 version 1.1.0 before the check of the codes, Section 3.17).
 
 ## 1. Input/output contract
@@ -567,7 +568,8 @@ analysis was checked against the variable list of the scientific use files
 2020) and the 2008 guidelines (Annex V for activities and locations), with
 `check_codes.py` run on the microdata for what the documents leave open
 (Section 6). The run of 19 November 2026 compared with version 1.0.0 is
-reported separately. Four changes follow, each with a test.
+reported separately. Seven changes follow, each with a test where one is
+needed.
 
 | ID | Where | Change | What changes in the outputs | Test |
 |---|---|---|---|---|
@@ -577,6 +579,7 @@ reported separately. Four changes follow, each with a test.
 | K4 | `data/HETUS_mapped_data.csv` | 422 (help in employment and farming) and 424 (other childcare as help to another household) draw 0 W instead of 5 W, like paid work (111) and childcare (381 to 389, 423); in the 2000 list these numbers meant household upkeep and construction and repairs as help (Annex V, Table 10.1), where 5 W would match 329 and 351 to 359 | Power at home in the slots with these codes (rare) | `test_stages01_04.py` reads the table |
 | K5 | Stages 01, 11 | Labels of `DDV6` (employed or student, diary question 6a), `HHC3` (persons aged under 7), `HHC4` (persons aged 7 to 17) and `HHC5` (one, or two or more, persons aged 18 or over) | Driver figures | none needed |
 | K6 | `tools/collect_exports.py`, `run_pipeline.sh` | The collector also extracts the lines of Stage 01 tagged `[same-day rule]` and `[secondary 999]`, and stops with a message when none of the tables is found; the runner prints the processed folder and how to collect the exports | None | `test_collect_exports.py` |
+| K7 | `data/HETUS_mapped_data.csv` | `Light_use` of 342 (tending domestic animals) set to 0 and of 343 (caring for pets) to 1: the two were swapped against the rule of the table, by which outdoor activities (322, 341, 344, 349) need no light | None in the pipeline, which reads no `Light_use`; the lighting factor X19 of the sensitivity analysis | `test_gsa_model.py` reads the table |
 
 The same-day rule cannot see a postponement by whole weeks within one month,
 which the guidelines prescribe (a diary is moved by 7, 14 or 21 days, to the

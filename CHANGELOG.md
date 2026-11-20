@@ -10,7 +10,10 @@ categorical analysis, prints no table of shares by cluster and category, and
 prints a share only where no count below 20 can be worked out from it.
 `tools/collect_exports.py` reads several logs, and saved logs are ignored by
 git. The sensitivity analysis uses 20 K-means starts by default, as the
-pipeline does.
+pipeline does. In the mapping table, `Light_use` of 342 (tending domestic
+animals) and 343 (caring for pets) are swapped back, so that outdoor
+activities need no light; only the lighting factor of the sensitivity
+analysis reads the column.
 
 The lookup table from activity code to appliance power and metabolic rate is
 now part of the repository, as `data/HETUS_mapped_data.csv` under CC BY 4.0,

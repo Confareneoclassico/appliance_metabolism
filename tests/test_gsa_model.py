@@ -108,6 +108,14 @@ def test_baseline_powers_are_those_of_the_mapping():
     assert sorted(design.FIVE_WATT) == sorted(c for c, w in POWER.items() if w == 5 and c != 831)
 
 
+def test_light_use_of_outdoor_activities():
+    # Outdoor activities need no light; 342 and 343 were swapped until
+    # November 2026 (docs/PIPELINE.md Section 3.17, K7)
+    light = MAPPING.set_index("activity")["Light_use"]
+    assert (light[[322, 341, 342, 344, 349]] == 0).all() and light[343] == 1
+    assert int((light == 1).sum()) == 81
+
+
 def test_bundle_reproduces_stage03(synthetic_run):
     info = synthetic_run[2]
     assert info["power_check"]["differing"] == 0 and info["entries"] > 0
