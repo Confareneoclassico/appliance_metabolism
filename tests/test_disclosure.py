@@ -6,7 +6,7 @@ import pandas as pd
 import pytest
 
 from disclosure import (MIN_N_UNFLAGGED, assert_sizes, check_export, check_strata,
-                        protect, published_groups, recovered_size)
+                        pool_tail, protect, published_groups, recovered_size)
 
 
 def profile_table(sizes, rng, stratum="PL"):
@@ -99,3 +99,18 @@ def test_assert_sizes():
     assert_sizes(pd.DataFrame({"n": [50, 0, 1000, np.nan]}), ["n"])
     with pytest.raises(ValueError, match="column n"):
         assert_sizes(pd.DataFrame({"n": [50, 49]}), ["n"])
+
+
+def test_pool_tail_keeps_every_class_at_50_or_more():
+    # a long tail of small classes is pooled from the first value at which
+    # the pooled class reaches 50
+    counts = pd.Series([5000, 3000, 800, 400, 120, 60, 31, 10, 6, 2, 1], index=range(1, 12))
+    pooled, k = pool_tail(counts)
+    assert k == 7 and list(pooled.index) == ["1", "2", "3", "4", "5", "6", "7+"]
+    assert pooled["7+"] == 50 and pooled.sum() == counts.sum()
+    # a small class below a tail that is large enough joins the tail
+    pooled, k = pool_tail(pd.Series([300, 30, 200, 60], index=[1, 2, 3, 4]))
+    assert k == 2 and list(pooled.index) == ["1", "2+"] and pooled["2+"] == 290
+    # nothing to pool
+    pooled, k = pool_tail(pd.Series([300, 80, 60], index=[1, 2, 3]))
+    assert k == 3 and list(pooled.index) == ["1", "2", "3"]

@@ -8,6 +8,9 @@ processed/
 Figures/
 # Exports collected for sharing by tools/collect_exports.py
 exports_for_sharing/
+# Saved console logs of a run: working files, shared only through the
+# extract that tools/collect_exports.py makes
+run_log*.txt
 
 # Python
 __pycache__/

@@ -58,6 +58,28 @@ def size_class(n):
     return ""
 
 
+def pool_tail(counts, min_n=None):
+    """Counts by integer value (a Series indexed by the values) with the
+    largest values pooled into one class "k+", k being the largest value at
+    which the pooled class and every class below it hold at least min_n
+    (MIN_N_UNFLAGGED) units or none. Returns the pooled counts, indexed by
+    their labels, and k (Stage 10, numbers of diarists)."""
+    min_n = MIN_N_UNFLAGGED if min_n is None else min_n
+    counts = counts[counts > 0].sort_index()
+    values = list(counts.index)
+    k_pos = len(values) - 1
+    while k_pos > 0 and counts.iloc[k_pos:].sum() < min_n:
+        k_pos -= 1
+    small = [i for i in range(k_pos) if counts.iloc[i] < min_n]
+    if small:                      # a small class below the tail joins it
+        k_pos = small[0]
+    k = values[k_pos]
+    last = f"{k}+" if k_pos < len(values) - 1 else str(k)
+    labels = [str(v) for v in values[:k_pos]] + [last]
+    return pd.Series(list(counts.iloc[:k_pos]) + [int(counts.iloc[k_pos:].sum())],
+                     index=labels), k
+
+
 def round_size(n):
     """Round a size, or an array of sizes, to the nearest ROUND_N."""
     return np.floor(np.asarray(n, dtype="float64") / ROUND_N + 0.5) * ROUND_N

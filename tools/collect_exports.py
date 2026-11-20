@@ -7,14 +7,15 @@ rules of pipeline/disclosure.py, into one folder that can be zipped and
 shared, and writes a manifest of what was copied and what was not. A table
 that fails a test, or a file that is missing, is not copied.
 
-    python3 tools/collect_exports.py [--out FOLDER] [--log RUN_LOG]
+    python3 tools/collect_exports.py [--out FOLDER] [--log RUN_LOG [RUN_LOG ...]]
 
 The folder defaults to exports_for_sharing/ at the root of the repository
 (ignored by git). The tables are read from the folders of pipeline/paths.py,
-so the same HETUS_* settings as for the run apply. With --log, the lines of a
-saved console log that hold only solution-level figures (PCA, WCSS, the
-number of clusters and how it was chosen, stability) are written to
-log_extract.txt; read it before sharing it.
+so the same HETUS_* settings as for the run apply. With --log, the lines of
+the saved console logs (several for a run made in parts) that hold only
+solution-level figures (PCA, WCSS, the number of clusters and how it was
+chosen, stability) are written to log_extract.txt; read it before sharing it.
+The logs themselves are working files and are not copied.
 """
 import argparse
 import re
@@ -113,11 +114,16 @@ def collect(out, log=None):
             manifest.append(f"copied   {name}")
         else:
             manifest.append(f"MISSING  {name}")
-    if log:
-        lines = [line for line in Path(log).read_text(errors="replace").splitlines()
-                 if LOG_PATTERNS.search(line)]
+    logs = [] if not log else ([log] if isinstance(log, (str, Path)) else list(log))
+    if logs:
+        lines, parts = [], []
+        for one in logs:
+            found = [line for line in Path(one).read_text(errors="replace").splitlines()
+                     if LOG_PATTERNS.search(line)]
+            lines += found
+            parts.append(f"{len(found)} lines of {one}")
         (out / "log_extract.txt").write_text("\n".join(lines) + "\n")
-        manifest.append(f"copied   log_extract.txt ({len(lines)} lines of {log}; read it before sharing)")
+        manifest.append(f"copied   log_extract.txt ({', '.join(parts)}; read it before sharing)")
     (out / "manifest.txt").write_text("\n".join(manifest) + "\n")
     return manifest
 
@@ -132,7 +138,8 @@ def nothing_found(manifest):
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--out", type=Path, default=ROOT / "exports_for_sharing")
-    parser.add_argument("--log", type=Path, default=None)
+    parser.add_argument("--log", type=Path, nargs="+", default=None,
+                        help="saved console logs of the run (several for a run made in parts)")
     args = parser.parse_args()
     manifest = collect(args.out, args.log)
     print("\n".join(manifest))

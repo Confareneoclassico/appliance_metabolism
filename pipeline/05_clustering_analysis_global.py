@@ -12,7 +12,7 @@ from itertools import combinations
 import warnings
 import os
 from paths import PROCESSED_DIR, FIGURES_DIR
-from disclosure import protect, check_export, published_groups, MIN_N_UNFLAGGED
+from disclosure import protect, check_export, published_groups, MIN_N_PUBLISH, MIN_N_UNFLAGGED
 from peaks import circular_peak_stats, clock_str
 warnings.filterwarnings("ignore")
 
@@ -148,9 +148,6 @@ kmeans = KMeans(n_clusters=optimal_k, random_state=42, n_init=20)
 clustering_data["cluster"] = kmeans.fit_predict(X_pca)
 
 print(f"Clustering completed with {optimal_k} clusters.")
-print("Cluster sizes:")
-cluster_counts = clustering_data["cluster"].value_counts().sort_index()
-print(cluster_counts)
 
 # Groups under which the clusters are published (disclosure.py, Option A of the
 # audit of November 2026): a cluster of fewer than MIN_N_UNFLAGGED
@@ -164,6 +161,13 @@ pub_sizes = pd.Series(pub_groups).value_counts()
 if small_clusters:
     print(f"Clusters {small_clusters} have fewer than {MIN_N_UNFLAGGED} household-days and "
           f"are reported together with the largest, cluster {largest_cluster}.")
+# The console reports the published groups only, so that a saved log holds no
+# size below MIN_N_UNFLAGGED either (November 2026)
+print("Sizes of the published groups (household-days):")
+print(pub_sizes.sort_index().to_string())
+# The same household-days under the labels of the published groups, for every
+# printout and figure of the categorical analysis below
+groups_data = clustering_data.assign(cluster=pub_groups)
 
 
 def n_merged(g):
@@ -284,7 +288,23 @@ def interpret_cramers_v(v):
     else:
         return "Strong"
 
-def analyze_feature_distributions(clustering_data, categorical_features, alpha=0.05):
+def share_text(count, total):
+    """A share as the console may print it: None if the count behind it, or
+    the rest of its group, is between 1 and MIN_N_PUBLISH - 1, since either
+    could be worked out from the share and the size of the group."""
+    rest = total - count
+    if 0 < count < MIN_N_PUBLISH or 0 < rest < MIN_N_PUBLISH:
+        return None
+    return f"{count / total:.1%}"
+
+
+def analyze_feature_distributions(clustering_data, categorical_features, alpha=0.05,
+                                  display_data=None):
+    """Chi-squared test of every feature across the clusters, with the
+    distances and figures drawn for the published groups (display_data). The
+    table of shares by cluster and category is no longer printed: with the
+    sizes it gives every cell count, small ones included (November 2026)."""
+    display_data = clustering_data if display_data is None else display_data
     """
     Comprehensive analysis of categorical feature distributions across clusters
     """
@@ -295,11 +315,6 @@ def analyze_feature_distributions(clustering_data, categorical_features, alpha=0
         print(f"\n{'='*60}")
         print(f"ANALYSIS FOR: {feature}")
         print(f"{'='*60}")
-        
-        # Get contingency table
-        contingency_table = pd.crosstab(clustering_data["cluster"], clustering_data[feature], normalize='index')
-        print(f"Distribution across clusters:")
-        print(contingency_table.round(3))
         
         # Perform statistical test
         test_result = chi_square_test_categorical(feature, clustering_data, alpha)
@@ -320,10 +335,10 @@ def analyze_feature_distributions(clustering_data, categorical_features, alpha=0
         print(f"  Effect strength: {test_result['effect_strength']}")
         
         # Identify clusters with most different distributions
-        identify_outlier_clusters(feature, clustering_data)
+        identify_outlier_clusters(feature, display_data)
         
         # Create visualization
-        visualize_categorical_distribution(feature, clustering_data, test_result['significant'])
+        visualize_categorical_distribution(feature, display_data, test_result['significant'])
     
     return pd.DataFrame(results), significant_features
 
@@ -347,21 +362,11 @@ def identify_outlier_clusters(feature, clustering_data, top_n=3):
     # Sort by distance (most different first)
     sorted_distances = sorted(distances.items(), key=lambda x: x[1], reverse=True)
     
+    # Distances only: the shares of single categories behind them are not
+    # printed (November 2026)
     print(f"\nClusters with most distinctive distributions (top {top_n}):")
     for cluster_idx, distance in sorted_distances[:top_n]:
         print(f"  Cluster {cluster_idx}: Distance from average = {distance:.4f}")
-        
-        # Identify which categories contribute most to the difference
-        cluster_props = cluster_dist.loc[cluster_idx]
-        differences = (cluster_props - avg_distribution).abs()
-        top_diff_categories = differences.nlargest(3).index.tolist()
-        
-        for cat in top_diff_categories:
-            cluster_val = cluster_props[cat]
-            avg_val = avg_distribution[cat]
-            diff_pct = (cluster_val - avg_val) * 100
-            print(f"    Category {cat}: Cluster={cluster_val:.3f}, Average={avg_val:.3f}, "
-                  f"Difference={diff_pct:+.1f}%")
 
 def visualize_categorical_distribution(feature, clustering_data, is_significant):
     """
@@ -479,32 +484,33 @@ def create_cluster_profiles(clustering_data, categorical_features, significant_f
     print(f"\nUsing {len(significant_features)} significant features for profiling:")
     print(", ".join(significant_features))
     
-    # Create profile for each cluster
+    # Create profile for each published group (clustering_data holds the labels
+    # of the groups). A share is printed only if neither the count behind it
+    # nor the rest of the group is below MIN_N_PUBLISH (share_text)
     for cluster_id in sorted(clustering_data["cluster"].unique()):
+        cluster_data = clustering_data[clustering_data["cluster"] == cluster_id]
         print(f"\n{'='*40}")
         print(f"PROFILE: CLUSTER {cluster_id}")
-        print(f"Size: {sum(clustering_data['cluster'] == cluster_id)} households")
+        print(f"Size: {len(cluster_data)} households")
         print(f"{'='*40}")
         
-        cluster_data = clustering_data[clustering_data["cluster"] == cluster_id]
-        
         for feature in significant_features[:5]:  # Show top 5 most significant
-            # Calculate distribution for this cluster
-            cluster_dist = cluster_data[feature].value_counts(normalize=True)
-            
-            # Calculate overall distribution
-            overall_dist = clustering_data[feature].value_counts(normalize=True)
-            
-            # Find most characteristic category for this cluster
-            most_common = cluster_dist.idxmax() if not cluster_dist.empty else None
-            if most_common is not None:
-                cluster_freq = cluster_dist[most_common]
-                overall_freq = overall_dist.get(most_common, 0)
-                diff_pct = (cluster_freq - overall_freq) * 100
-                
-                print(f"{feature}:")
-                print(f"  Most common: {most_common} ({cluster_freq:.1%} in cluster vs {overall_freq:.1%} overall)")
+            counts = cluster_data[feature].value_counts()
+            overall_counts = clustering_data[feature].value_counts()
+            if counts.empty:
+                continue
+            most_common = counts.idxmax()
+            in_cluster = share_text(counts[most_common], len(cluster_data))
+            overall = share_text(overall_counts.get(most_common, 0), len(clustering_data))
+            print(f"{feature}:")
+            if in_cluster and overall:
+                diff_pct = 100 * (counts[most_common] / len(cluster_data)
+                                  - overall_counts.get(most_common, 0) / len(clustering_data))
+                print(f"  Most common: {most_common} ({in_cluster} in cluster vs {overall} overall)")
                 print(f"  Difference: {diff_pct:+.1f} percentage points")
+            else:
+                print(f"  Most common: {most_common} (shares not shown: fewer than "
+                      f"{MIN_N_PUBLISH} household-days behind them)")
         
         # Calculate distinctiveness score
         distinctiveness_score = calculate_distinctiveness_score(cluster_id, clustering_data, significant_features)
@@ -587,13 +593,14 @@ def create_summary_report(stat_results, pairwise_results, optimal_k):
 # ============================================================================
 
 # Analyze categorical feature distributions
-stat_results_df, significant_features = analyze_feature_distributions(clustering_data, categorical_features)
+stat_results_df, significant_features = analyze_feature_distributions(
+    clustering_data, categorical_features, display_data=groups_data)
 
 # Perform pairwise comparisons
-pairwise_results = perform_pairwise_comparisons(clustering_data, categorical_features)
+pairwise_results = perform_pairwise_comparisons(groups_data, categorical_features)
 
 # Create cluster profiles
-create_cluster_profiles(clustering_data, categorical_features, significant_features)
+create_cluster_profiles(groups_data, categorical_features, significant_features)
 
 # Create summary report
 create_summary_report(stat_results_df, pairwise_results, optimal_k)

@@ -1,7 +1,7 @@
 """Run the model over the sample of the sensitivity analysis.
 
     python3 -m gsa.run --bundle BUNDLE --runs RUNS [--m 10] [--first N]
-                       [--workers W] [--threads T] [--n-init 10]
+                       [--workers W] [--threads T] [--n-init 20]
                        [--uniform-in-watts]
 
 Run i is point i of the scrambled Sobol' sequence of gsa.design, so the first
@@ -16,7 +16,9 @@ the results depend on; resuming with other settings is refused.
 W workers each memory-map the bundle and use T threads. K-means takes most of
 the time, so try a pilot of a few runs with, say, --workers 1 --threads 8 and
 --workers 4 --threads 2, and keep the faster. Each worker needs about 1.5 GB
-of memory for HETUS 2010.
+of memory for HETUS 2010. K-means starts from 20 initialisations, as the
+final fits of the pipeline do (--n-init); on an eight-core laptop a pilot
+with 10 starts projected about 2 hours for the 1,024 runs of HETUS 2010.
 
 The run files hold aggregates over groups of at least 50 household-days, but
 they stay with the bundle; gsa.collect gathers what can be shared.
@@ -109,7 +111,8 @@ def main(argv=None):
     parser.add_argument("--first", type=int, default=None, help="run only the first N points")
     parser.add_argument("--workers", type=int, default=1)
     parser.add_argument("--threads", type=int, default=1, help="threads per worker")
-    parser.add_argument("--n-init", type=int, default=10, help="K-means starts per fit (pipeline: 20)")
+    parser.add_argument("--n-init", type=int, default=20,
+                        help="K-means starts per fit (default 20, as in the pipeline)")
     parser.add_argument("--uniform-in-watts", action="store_true",
                         help="powers X1 to X6 uniform in W (the check of the distributions)")
     args = parser.parse_args(argv)
