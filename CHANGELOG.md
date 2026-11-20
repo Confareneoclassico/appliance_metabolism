@@ -44,6 +44,20 @@ follow the variable list. The collector also extracts the tagged lines of
 Stage 01 and stops when it finds none of the tables, and the runner prints the
 processed folder and how to collect the exports.
 
+The global sensitivity analysis of the revision is in `gsa/` (`docs/GSA.md`).
+`gsa.bundle` builds the inputs of its model from a run and stops unless they
+give the power of Stage 03 exactly; `gsa.model` repeats Stages 03 and 05 to 08
+for any values of the 21 factors (appliance powers, country differences,
+shared appliances, ownership, secondary activities, base load, diarist
+coverage, day type, survey weights, K, PCA, lighting in darkness at the
+capital, laundry run-on and the K-means seed) and gives the 11 outputs and the
+mean profiles; `gsa.check` verifies that at the values of the run the model
+gives the same partitions and statistics as the pipeline; `gsa.run` makes the
+runs of the Sobol' sample in parallel and resumes an interrupted sample; and
+`gsa.collect` gathers the aggregate outputs that may be shared. The tests run
+Stages 01 to 08 on synthetic raw files and check each rule of the model
+against a computation of its own.
+
 Stage 03 computes the household power as a sparse product p = A w and runs in
 minutes instead of 10 to 15 hours, with the same values to the last bit (its
 former loop is kept in `pipeline/aggregate_household_loop_reference.py` and

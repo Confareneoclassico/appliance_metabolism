@@ -1,0 +1,243 @@
+# Global sensitivity analysis
+
+The sensitivity analysis asks how much each modelling choice of the pipeline
+moves the results that the manuscript reports. It answers comments R1.1 to
+R1.6 and R2.1 to R2.6 of the review of the manuscript (major revision
+ENB-D-26-09048), and its design is that of the note of 19 November 2026
+(Section 4 of `2026.11.19_validation_and_gsa_design`): 21 factors, 11 outputs,
+1,024 runs of a scrambled Sobol' sequence, and three families of indices
+(first-order Sobol' indices, Shapley effects and optimal-transport indices)
+computed from the same runs. This document describes the code in `gsa/`.
+
+The model of one run repeats the pipeline from the activity codes onwards:
+the household power of every household-day and slot (Stage 03), with the
+run's appliance powers and rules, the mean profiles by country and day type
+and the comparison of the day types (Stage 06), the global solution (Stage
+05) and the 47 stratified ones (Stage 06), the tests of the background
+variables (Stage 07) and the peak times of the global groups (Stage 08), under
+the publication rules of `pipeline/disclosure.py`. At the values of the
+canonical run it gives the same partitions and the same statistics as the
+pipeline, which `gsa.check` verifies on the run the inputs come from.
+
+## 1. Running it
+
+The commands below run on the machine that holds the microdata, from the root
+of the repository, after a complete canonical run of the pipeline (version
+1.1.0 with the changes of Section 3.17 of `docs/PIPELINE.md`, and
+`HETUS_CLUSTER_ON_SOCIO` unset). The folder `~/hetus_gsa` is an example.
+
+```bash
+# 1. Inputs of the model, built from the processed files and the raw files
+#    (a few minutes). The bundle holds microdata: it never leaves the machine.
+python3 -m gsa.bundle --out ~/hetus_gsa/bundle
+
+# 2. The model at the values of the canonical run against the files of the run
+#    (10 to 30 minutes); the report goes to ~/hetus_gsa/share/
+python3 -m gsa.check --bundle ~/hetus_gsa/bundle --threads 8
+
+# 3. Pilot: the first runs with two settings, which print the time per run
+python3 -m gsa.run --bundle ~/hetus_gsa/bundle --runs ~/hetus_gsa/runs --first 4 --workers 1 --threads 8
+python3 -m gsa.run --bundle ~/hetus_gsa/bundle --runs ~/hetus_gsa/runs --first 12 --workers 4 --threads 2
+
+# 4. The 1,024 runs with the faster setting (an interrupted run resumes), and
+#    the 256 runs of the check of the distributions of the powers
+python3 -m gsa.run --bundle ~/hetus_gsa/bundle --runs ~/hetus_gsa/runs --workers 4 --threads 2
+python3 -m gsa.run --bundle ~/hetus_gsa/bundle --runs ~/hetus_gsa/runs_uniform --m 8 \
+    --uniform-in-watts --workers 4 --threads 2
+
+# 5. The files that can be shared, in ~/hetus_gsa/share/ and share_uniform/
+python3 -m gsa.collect --runs ~/hetus_gsa/runs
+python3 -m gsa.collect --runs ~/hetus_gsa/runs_uniform --out ~/hetus_gsa/share_uniform
+```
+
+`gsa.bundle` takes its locations from `pipeline/paths.py`, so the same
+`HETUS_*` settings as the run apply. It stops if its power differs from that
+of Stage 03 in any household-day and slot, or if the household-days, the
+order of `prepared_clustering_data.csv` or the diarist records of the raw
+files do not match. `gsa.check` exits with status 1 if any comparison fails.
+Run i of `gsa.run` is always point i of the same sequence, so the pilot runs
+are the first runs of the sample, and the runs can be made in any number of
+sittings; a folder holds the runs of one set of settings (number of K-means
+starts, distribution of the powers, bundle), and `gsa.run` refuses to add runs
+made with other settings. A run that fails leaves its traceback in
+`run_iiiii.error` and is made again by the next call.
+
+## 2. The inputs (gsa/bundle.py)
+
+The bundle is a folder of uncompressed `.npy` arrays, which every worker of
+`gsa.run` memory-maps, so that one copy serves all of them:
+
+| Folder | Contents |
+| --- | --- |
+| `entries/` | One element per household-day, slot and activity code in use at home, for the 28 codes with a power: the number of diarists at home with the code as main activity (`cm`) and as secondary activity only (`cs`, with another main activity), and whether the first-listed diarist has it as main (`fm`) or secondary activity only (`fs`) |
+| `slots/` | For every household-day and slot: whether a diarist at home, or the first-listed diarist at home, is in an activity, main or secondary, with `Light_use` = 1, and the number of slots since laundry (331) was last in use, 1 to 12, with whether laundry was a main activity in that last slot |
+| `households/` | Country, the day type by `DDV7` then `DDV1` (the rule of Stage 06) and by `DDV1` only, the survey weights (`WGHT1` of the first-listed diarist and its mean over the household-day's diarists, each scaled to mean 1 within its country, 1 where missing), the row of the darkness table, `HHQ6c`, `HHQ6h` and `HHQ6o`, the 16 background variables as in `prepared_clustering_data.csv`, the clusters of the canonical run (for Y8) and the number of diarists |
+| `darkness/` | For every country, year and month of the diaries, the share of the days of the month on which each slot is dark at the capital |
+| `meta.json` | Sizes, codes, feature names, the result of the power check and the sources |
+
+Household-days are in the order of `household_interval_timeseries.csv`, and
+the first-listed diarist is the first record of the household-day, as in
+Stage 03. The weights, months, years and ownership items are read from the raw
+files, matched on `HID`, `PID` and `DIARY` as Stage 01 builds them. Darkness
+(`gsa/sun.py`) uses sunrise and sunset at the capital from the NOAA
+approximation of the solar position, within two minutes of published times
+(`test_gsa_sun.py`), with the country's standard time and the European
+summer-time rule; the day of the month is not in the scientific use files, so
+each slot is weighted by the share of the days of the diary month on which it
+falls in darkness, and the slots after midnight are compared with the sunrise
+of the same day.
+
+## 3. The model (gsa/model.py)
+
+The power in slot t of household-day h, in W, is
+
+```
+p = m_country * ( sum over the codes c in use at home of own_c * w_c * q_c
+                  + own_331 * w_331 * r * v )
+    + X19 * darkness(country, year, month, t) * [a diarist at home is in an activity that needs light]
+    + X12
+```
+
+with q_c given by the shared-appliance rule (X9), the weight of codes recorded
+only as secondary activities (X11) and the diarists covered (X13):
+
+| Rule | q_c |
+| --- | --- |
+| union (pipeline) | 1 if a diarist at home has c as main activity, X11 otherwise |
+| per person | (diarists with c as main activity) + X11 (diarists with c as secondary activity only) |
+| television once | per person, with television (821) counted as in the union, since the files only tell whether a household has a set |
+| first-listed diarist (X13) | 1, X11 or 0 for the first-listed diarist alone, whatever X9 |
+
+The run-on of laundry (X20, in minutes) adds r = clip(X20 / 10 - (k - 1), 0, 1)
+in the k-th slot after laundry stops, k = 1 to 12, with v = 1 if laundry was
+a main activity in its last slot and X11 if it was only a secondary one. The
+country multipliers are m = exp(X7 z), z drawn from a standard normal with
+seed X8 and centred over the countries of the bundle, so that they change the
+differences between countries and not the overall level. With ownership
+applied (X10), own_c = 0 where the household lacks the appliance of code c:
+`HHQ6c` = 0 (no television set) for 821, `HHQ6h` = 2 (no washing machine) for
+331 and its run-on, and `HHQ6o` = 2 (no computer) for 721 to 729 and 733;
+households not asked are taken to own it. At the values of the canonical run
+every q_c is 1, every own_c and m is 1 and X12, X19 and X20 are 0, so p is the
+power of Stage 03 exactly.
+
+The weights of X15 enter every mean and share, the contingency tables of the
+tests (scaled to the number of observations) and K-means (`sample_weight`),
+while standardisation and PCA are unweighted, as in the pipeline. Every
+solution is standardised, reduced by PCA to the share X18 of the variance and
+clustered by K-means with K = X16 (global) or X17 (stratified, at most a tenth
+of the stratum as in Stage 06), seed X21 and 10 starts (`--n-init`; the final
+fits of the pipeline use 20). The base load shifts every slot equally and
+moves no peak, so peak times are taken from the power without it, and a
+household-day without other demand has no peak, as in the pipeline.
+
+## 4. Factors and outputs
+
+| ID | Factor | Range or levels | Canonical run |
+| --- | --- | --- | --- |
+| X1 | Cooking (311) | 400 to 1,200 W | 810 W |
+| X2 | Laundry (331); ironing (332) | 250 to 800 W; 1,000 to 2,800 W | 530 W; 2,800 W |
+| X3 | Cleaning (321) | 300 to 1,000 W | 620 W |
+| X4 | Television (821); radio (831) | 50 to 200 W; 5 to 30 W | 71 W; 5 W |
+| X5 | Computing (721 to 729) and games (733) | 40 to 250 W | 201 W; 210 W |
+| X6 | Household management (371); the 16 other activities at 5 W | 20 to 150 W; 0 to 20 W | 70 W; 5 W |
+| X7, X8 | Country differences in appliance power | SD of the log multipliers 0 to 0.3, and their seed | 0 |
+| X9 | Shared-appliance rule | union; per person; television once | union |
+| X10 | Ownership | ignored; applied | ignored |
+| X11 | Weight of codes recorded only as secondary | 0 to 1 | 1 |
+| X12 | Base load | 0 to 100 W | 0 |
+| X13 | Diarist coverage | all; first-listed | all |
+| X14 | Day type | `DDV7`, then `DDV1`; `DDV1` only | `DDV7`, then `DDV1` |
+| X15 | Survey weight | none; `WGHT1` of the first-listed diarist; mean `WGHT1` | none |
+| X16 | K of the global solution | 6 to 12 | knee (9) |
+| X17 | K of the stratified solutions | 3 to 8 | knee, or 4 |
+| X18 | Share of variance kept by PCA | 0.80 to 0.99 | 0.95 |
+| X19 | Lighting | 0 to 150 W per household while lit in darkness | 0 |
+| X20 | Laundry run-on | 0 to 120 minutes | 0 |
+| X21 | Seed of K-means | integer | 42 |
+
+Powers are log-uniform on their ranges, except where a range starts at zero,
+and within a factor every code sits at the same quantile of its own range.
+`gsa/design.py` holds the factors, the sample (scrambled Sobol', seed
+20261119, with one coordinate per factor and five matched dummies) and the
+Shapley players (the appliance powers X1 to X6 and the country factors X7 and
+X8 as two groups).
+
+| ID | Output |
+| --- | --- |
+| Y1 | Share of household-days in the global group with the lowest mean daily energy |
+| Y2 | Share of household-days in global groups whose circular SD of peak time is 2 h or less; Y2b, the mean circular SD weighted by household-days, has no threshold |
+| Y3 | Median over the countries of the change in the coincident peak (maximum of the mean profile) from working to non-working days, in % |
+| Y4 | Largest absolute change over the countries in the mean own daily peak between the day types, in % |
+| Y5 | Largest bias-corrected Cramér's V (Bergsma 2013) of the global solution, country aside, and its variable |
+| Y6 | Number of the 48 solutions in which the number of adults (`HHC5`) has the largest Cramér's V, country aside |
+| Y7 | Ratio of the mean daily energy in the single-diarist countries (Hungary, the Netherlands, Norway) to that in the others |
+| Y8 | Adjusted Rand index between the run's global partition and that of the canonical run |
+| Y9 | Correlation of the hourly shape of Belgium, all days, with the Synergrid S21 profile |
+| Y10 | Correlation of the hourly shape of France, all days, with the Enedis RES1 profile |
+| Y11 | Ratio of the evening to the midday maximum of the hourly shape of France, all days |
+
+The global groups are those under which the pipeline publishes the clusters
+(every cluster of fewer than 50 household-days with the largest), the tests
+are those Stage 07 publishes (at least 50 valid answers and item non-response
+of at most 50%), and the shapes of Y9 to Y11 are those of the validation of 19
+November 2026 (`gsa/benchmarks.py`: hourly means, minimum removed, sum one),
+over the household-days whose day type is known, as the profiles of Stage 06.
+
+## 5. What can be shared
+
+The bundle and the run folders stay on the machine that holds the microdata.
+`gsa.collect` writes the files that can be shared: `gsa_outputs.csv` (one row
+per run: coordinates, factor values, outputs and diagnostics),
+`gsa_profiles.npz` (the mean profiles of every run by country and day type)
+and `manifest.txt` (the settings, the runs present, and the range and the
+missing values of every output). Every value in them is an aggregate over at
+least 50 household-days: shares and means of the published groups, test
+statistics of published tests, and mean profiles of countries and day types,
+which have several hundred household-days or more each. The numbers of household-days
+stay in the run files. The report of `gsa.check` holds differences between the
+model and the pipeline, counts of matching solutions and the outputs at the
+canonical values, so it can be shared too.
+
+## 6. Checks
+
+`gsa.check` runs the model once at the canonical values, with K chosen by the
+knee in every solution as in Stages 05 and 06 and 20 starts, and compares it
+with the files of the run: the labels and K of all 48 solutions, every
+Cramér's V of `consolidated_chi2_stats.csv` and which tests are published,
+the changes between the day types of `peak_power_daytype_comparison.csv`, the
+profiles of `mean_profiles_country_daytype.csv` and the circular SD of the
+global groups in `consolidated_circular_stats.csv`. On the synthetic run of
+the tests every label is the same and the statistics agree to 1e-15.
+
+`tests/test_gsa_model.py` runs Stages 01 to 08 on synthetic raw files (three
+countries, households of one to three diarists, weights, months, ownership
+items) and checks the bundle (built in one block or many, the same arrays),
+the comparison above, each rule of the power against a computation of its own
+from the diarist records (every diarist counted, against the sum of the
+diarists' series of Stage 01; the first-listed diarist, against its series;
+television once; secondary codes left out; ownership; run-on; lighting; base
+load; multipliers), the published groups against `disclosure.py`, the peak
+times against `peaks.py`, the tests against `scipy`, the weights, and the
+runner (resume, refusal of other settings) and the collected files.
+`tests/test_gsa_design.py` and `tests/test_gsa_estimators.py` cover the sample
+and the estimators.
+
+## 7. Cost
+
+On a random bundle of the size of HETUS 2010 (192,000 household-days, 6.3
+million entries) one run took 70 to 120 seconds on two threads, K-means taking
+nine tenths of it, and about 1.5 GB of memory. K-means gains little from more
+threads on some machines, which is why the pilot compares one worker with many
+threads against several workers with few; the memory of each worker sets how
+many can run together. The 1,024 runs should take about one night on a laptop
+with eight cores. `--n-init 20` doubles the cost of K-means; fewer starts make the
+partitions depend more on the seed X21, which the analysis then shows.
+
+## 8. The analysis
+
+The indices are computed from `gsa_outputs.csv` alone with `gsa/estimators.py`
+(class-based first-order indices, optimal-transport indices and
+nearest-neighbour Shapley effects) and `gsa/convergence.py` (bootstrap
+intervals, the dummies, and the convergence statistics of Sarrazin et al.
+2016 on the nested designs of 128 to 1,024 runs).

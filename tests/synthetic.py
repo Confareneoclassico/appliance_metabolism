@@ -102,3 +102,98 @@ def prepared_data(sizes, seed=2, whole_watts=True):
             b[col] = rng.integers(1, 4, size=n)
         blocks.append(b)
     return pd.concat(blocks, ignore_index=True)
+
+
+# ---------------------------------------------------------------------------
+# Inputs for the sensitivity analysis (gsa.bundle, gsa.model): households of
+# one to three diarists with a varied day, two day types, weights, diary
+# months and years, and the ownership items.
+GSA_SIZES = {"BE": (1, 2, 3), "FR": (2, 1, 3, 2), "NL": (1,)}
+
+
+def _block(codes, start, length, code):
+    codes[max(0, start):max(0, min(len(codes), start + length))] = code
+
+
+def gsa_person(rng, hid, pid, house, adult=True):
+    """One diary day of one diarist of a household described by `house`."""
+    employed = adult and rng.random() < 0.6
+    row = {"YEAR": house["year"], "HID": hid, "PID": pid, "DIARY": 1, "COUNTRY": house["country"],
+           "DDV1": house["ddv1"], "DDV3": house["month"], "DDV4": house["year"],
+           "DDV6": 1 if employed else 2,
+           "DDV7": (house["ddv7_work"] if employed else -9),
+           "INC1": 1 + int(rng.random() < 0.5), "INC2": int(rng.integers(4, 9)) if adult else 2,
+           "INC3": 1, "INC4_1": 1 if employed else int(rng.integers(2, 6)),
+           "IND6_1": int(rng.integers(1, 4)) if employed else -1,
+           "IND44": int(rng.integers(1, 3)) if employed else -1,
+           "IND22_1": int(rng.integers(1, 4)), "HHQ5": house["hhq5"], "HHQ9_1": house["income"],
+           "HHC1": house["size"], "HHC3": house["hhc3"], "HHC4": house["hhc4"],
+           "HHC5": house["hhc5"], "WGHT1": float(rng.lognormal(0.0, 0.3)),
+           "HHQ6c": house["hhq6c"], "HHQ6h": house["hhq6h"], "HHQ6o": house["hhq6o"]}
+    m = np.full(SLOTS, 11)                         # sleep
+    s = np.zeros(SLOTS)
+    where = np.ones(SLOTS)
+    wake, bed = int(rng.integers(10, 30)), int(rng.integers(108, 132))
+    day = rng.choice([21, 31, 39, 329, 351, 363, 513, 529, 619, 719, 732, 999], size=bed - wake)
+    m[wake:bed] = day
+    working_day = house["ddv1"] in (2, 3, 4, 5, 6) and employed and house["ddv7_work"] != 3
+    if working_day:                                 # away at work
+        out = wake + int(rng.integers(6, 12))
+        span = int(rng.integers(40, 60))
+        _block(m, out, span, 910)
+        where[out:out + span] = 3
+    if rng.random() < house["tv"]:
+        _block(m, int(rng.integers(84, 100)), int(rng.integers(8, 24)), 821)
+    if rng.random() < 0.7:
+        _block(m, int(rng.integers(46, 54)), int(rng.integers(3, 7)), 311)
+        _block(m, int(rng.integers(86, 94)), int(rng.integers(3, 7)), 311)
+    if rng.random() < 0.3:
+        _block(m, int(rng.integers(wake, max(wake + 1, bed - 6))), int(rng.integers(2, 6)), 331)
+    for code, prob in ((321, 0.3), (332, 0.15), (721, 0.4), (733, 0.15), (371, 0.2), (31, 0.2)):
+        if rng.random() < prob:
+            _block(m, int(rng.integers(wake, max(wake + 1, bed - 6))), int(rng.integers(2, 9)), code)
+    m[where != 1] = np.where(m[where != 1] == 11, 910, m[where != 1])
+    sec_pick = rng.random(SLOTS)
+    s[(sec_pick < 0.08) & (m != 821)] = 821
+    s[(sec_pick > 0.92)] = 831
+    s[(sec_pick > 0.5) & (sec_pick < 0.52)] = 331
+    s[(sec_pick > 0.6) & (sec_pick < 0.62)] = 999
+    s[where != 1] = 0
+    for t in range(SLOTS):
+        row[f"Mact{t + 1}"] = int(m[t])
+        row[f"Sactn{t + 1}"] = int(s[t])
+        row[f"Wherep{t + 1}"] = int(where[t])
+        for prefix in ("Wpartner", "Wchild", "Wotherh"):
+            row[f"{prefix}{t + 1}"] = 0
+    return row
+
+
+def raw_country_gsa(n_households, rng, country):
+    sizes = GSA_SIZES.get(country, (2,))
+    rows = []
+    for h in range(1, n_households + 1):
+        size = sizes[h % len(sizes)]
+        weekend = h % 2 == 0
+        house = {"country": country, "size": size, "year": 2010 + int(rng.random() < 0.4),
+                 "month": int(rng.integers(1, 13)),
+                 "ddv1": int(rng.choice([1, 7])) if weekend else int(rng.integers(2, 7)),
+                 "ddv7_work": (3 if weekend else (3 if rng.random() < 0.15 else 1)),
+                 "hhq5": int(rng.integers(1, 3)),
+                 "income": int(rng.integers(1, 11)) if rng.random() < 0.85 else -7,
+                 "hhc3": int(rng.integers(0, 2)), "hhc4": int(rng.integers(0, 3)),
+                 "hhc5": 1 if size == 1 else 2,
+                 "hhq6c": (-9 if country == "NL" else int(rng.random() < 0.9)),
+                 "hhq6h": 2 if rng.random() < 0.15 else 1,
+                 "hhq6o": 2 if rng.random() < 0.3 else 1,
+                 "tv": 0.4 + 0.15 * size}
+        for p in range(1, size + 1):
+            rows.append(gsa_person(rng, h, p, house, adult=(p <= 2)))
+    return pd.DataFrame(rows)
+
+
+def write_raw_gsa(folder, countries=("BE", "FR", "NL"), n_households=130, seed=7):
+    """Raw files for the tests of the sensitivity analysis, with the extra
+    columns that gsa.bundle reads (WGHT1, DDV4, HHQ6c, HHQ6h, HHQ6o)."""
+    rng = np.random.default_rng(seed)
+    for c in countries:
+        raw_country_gsa(n_households, rng, c).to_csv(folder / f"{c}.csv", index=False)
