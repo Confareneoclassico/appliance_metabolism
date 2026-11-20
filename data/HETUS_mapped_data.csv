@@ -48,9 +48,9 @@
 399,Help to a non dependent adult household member ,3919,Other specified help to a non-dependent adult household member,"Cleaning, general","2,1",0,148.4568936,254.1783516,360.9451907,371.6713292,334.6543122,1,0
 411,Organisational work (work for or through an organisation) ,4110,Work for an organisation,"Sitting, light office work, in general",0,0,63.62438298,108.9335793,154.690796,159.2877125,143.4232767,1,0
 421,Construction and repairs as help,4240,Construction and repairs as help to other households,"Painting, papering, plastering, remodelling",2,5,190.8731489,326.8007378,464.072388,477.8631375,430.26983,0,0
-422,Help in employment and farming,4260,Help to other households in employment and farming,"Cleaning, general",2,5,148.4568936,254.1783516,360.9451907,371.6713292,334.6543122,1,0
+422,Help in employment and farming,4260,Help to other households in employment and farming,"Cleaning, general",2,0,148.4568936,254.1783516,360.9451907,371.6713292,334.6543122,1,0
 423,Care of own children living in another household,4275,Physical care and supervision of own child as help to other household,"Child care, standing",2,0,148.4568936,254.1783516,360.9451907,371.6713292,334.6543122,1,0
-424,Other childcare as help to another household,4271,Physical care and supervision of child as help to other household,"Child care, standing",2,5,148.4568936,254.1783516,360.9451907,371.6713292,334.6543122,1,0
+424,Other childcare as help to another household,4271,Physical care and supervision of child as help to other household,"Child care, standing",2,0,148.4568936,254.1783516,360.9451907,371.6713292,334.6543122,1,0
 425,Help to an adult of another household,4280,Unspecified help to an adult of another household,"Cleaning, general",2,0,148.4568936,254.1783516,360.9451907,371.6713292,334.6543122,1,0
 429,Other or unspecified informal help to another household ,4289,Other specified informal help to another household,"Cleaning, general",2,0,148.4568936,254.1783516,360.9451907,371.6713292,334.6543122,1,0
 431,Meetings,4310,Meetings,"Sitting, meetings, general, and/or with talking",0,0,63.62438298,108.9335793,154.690796,159.2877125,143.4232767,1,0

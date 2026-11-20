@@ -104,3 +104,19 @@ def test_table_by_diarists_hides_small_groups():
     assert table["mean"].isna().all()              # every group has fewer than 50
     assert table["household_days"].isna().all()
     assert set(table["n_class"]) == {"<20"}
+
+
+def test_unspecified_time_use_is_not_a_shared_activity():
+    # J: both at home with main code 999 (other unspecified time use, which
+    # includes "no activity recorded") in the first half and TV in the
+    # second: only the second half is comparable, and all of it is shared.
+    # K: secondary 999 for both diarists, main sleep for one and eating for
+    # the other: comparable, nothing shared.
+    records = [("J", 1, 1, half(999, 821), 0, 1), ("J", 2, 1, half(999, 821), 0, 1),
+               ("K", 1, 1, 11, 999, 1), ("K", 2, 1, 21, 999, 1)]
+    ids, M, S, W = build(records)
+    s, codes, _, _ = stage09.compute_sharing(ids, M, S, W)
+    s = s.set_index(["HID", "DIARY"])
+    assert (s.loc[("J", "1"), "comparable_slots"], s.loc[("J", "1"), "shared_slots"]) == (72, 72)
+    assert (s.loc[("K", "1"), "comparable_slots"], s.loc[("K", "1"), "shared_slots"]) == (144, 0)
+    assert codes[999] == 0

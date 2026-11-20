@@ -64,10 +64,12 @@ FIGURES = [
     (FIGURES_DIR, "elbow_method_improved.png"),
     (COUNTRY_DAYTYPE_DIR, "country_daytype_profiles_small_multiples.png"),
 ]
-# Console lines with solution-level figures only
+# Console lines with solution-level figures only, and the tagged lines of
+# Stage 01 (country shares and counts in classes below 50)
 LOG_PATTERNS = re.compile(
     r"PCA|WCSS|[Oo]ptimal number of clusters|optimal k|[Kk]nee|Silhouette|\bARI\b|"
-    r"PERFORMING CLUSTERING ANALYSIS|Number of households: \d|Clustering features")
+    r"PERFORMING CLUSTERING ANALYSIS|Number of households: \d|Clustering features|"
+    r"\[same-day rule\]|\[secondary 999\]")
 
 
 def problems(table, size_cols, profile_test):
@@ -120,6 +122,13 @@ def collect(out, log=None):
     return manifest
 
 
+def nothing_found(manifest):
+    """True when none of the tables was found, which usually means that
+    HETUS_PROCESSED_DIR differs from the one of the run."""
+    tables = [line for line in manifest if ".csv" in line.split(":")[0]]
+    return bool(tables) and all(line.startswith("MISSING") for line in tables)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--out", type=Path, default=ROOT / "exports_for_sharing")
@@ -127,6 +136,10 @@ def main():
     args = parser.parse_args()
     manifest = collect(args.out, args.log)
     print("\n".join(manifest))
+    if nothing_found(manifest):
+        print(f"\nNone of the tables was found in {PROCESSED_DIR}. Set HETUS_PROCESSED_DIR "
+              "(and HETUS_FIGURES_DIR) as for the run, then collect again.")
+        sys.exit(1)
     print(f"\nFolder to share: {args.out}")
     if any(line.startswith("REFUSED") for line in manifest):
         sys.exit(1)

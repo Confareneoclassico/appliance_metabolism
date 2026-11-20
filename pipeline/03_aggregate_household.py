@@ -214,14 +214,8 @@ def main():
     n_days = int(g.max()) + 1 if len(g) else 0
     print(f"Found {n_days} unique household-day combinations")
 
-    # Secondary code 999 (other unspecified time use) by country, a check of
-    # the coding of absent secondary activities (audit check C5)
-    home_slots = W.sum(axis=1)
-    sec999 = ((S == 999) & W).sum(axis=1)
-    by_country = pd.DataFrame({"COUNTRY": meta["COUNTRY"].values, "home": home_slots,
-                               "s999": sec999}).groupby("COUNTRY").sum()
-    print("\nShare of at-home diarist-slots with secondary code 999, by country (%):")
-    print((100 * by_country["s999"] / by_country["home"]).round(2).to_string())
+    # Secondary code 999 is set to no secondary activity in Stage 01, which
+    # prints its share by country (89.9% of the Dutch at-home slots)
 
     codes = np.unique(np.r_[M[W & (M != NO_CODE)], S[W & (S != NO_CODE)], 0])
     power_of = np.array([float(activity_power.get(int(c), 0.0)) for c in codes])
