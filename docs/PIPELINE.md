@@ -533,7 +533,10 @@ matrices for its structural factors: `HETUS_SAVE_ACTIVITY_MATRIX=1` writes the
 matrix of codes in use (union), the matrix of codes used as a main activity by
 at least one diarist at home, and the number of diarists at home using each
 code, each diarist counted once per code, to `activity_matrix.npz`, with the
-household-days of its row blocks in `activity_matrix_households.csv`.
+household-days of its row blocks in `activity_matrix_households.csv`. The
+sensitivity analysis now builds its own inputs from the outputs of Stages 02
+to 04 and the raw files (`gsa/bundle.py`, `docs/GSA.md`), checked against the
+power of Stage 03, so it does not need these matrices.
 
 The new stage reproduces the loop exactly. Power is a sum of whole watts. The
 metabolic rate of a slot is summed over the diarists at home in the order of

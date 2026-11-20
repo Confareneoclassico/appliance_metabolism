@@ -69,6 +69,19 @@ row per household-day). Its `manifest.txt` lists what was copied, refused or
 missing, and `log_extract.txt` keeps the lines of the saved console log with
 solution-level figures only (PCA, WCSS, the choice of K).
 
+The global sensitivity analysis of the revision (21 modelling choices, 11
+outputs, 1,024 runs) is in `gsa/` and described in `docs/GSA.md`. It builds
+its inputs from a canonical run on the machine that holds the microdata,
+checks that its model reproduces the pipeline at the values of that run, and
+collects only aggregate outputs for sharing:
+
+```bash
+python3 -m gsa.bundle --out ~/hetus_gsa/bundle          # inputs (microdata, stay here)
+python3 -m gsa.check --bundle ~/hetus_gsa/bundle        # model against the run
+python3 -m gsa.run --bundle ~/hetus_gsa/bundle --runs ~/hetus_gsa/runs --workers 4 --threads 2
+python3 -m gsa.collect --runs ~/hetus_gsa/runs          # files to share
+```
+
 Every stage takes its file locations from `pipeline/paths.py`, which resolves
 them from the repository root, so a stage can be run from any directory
 (`python pipeline/05_clustering_analysis_global.py` works as well as running
@@ -95,8 +108,9 @@ internals are unchanged except for the corrections listed in
 ├── requirements.txt           Python dependencies
 ├── run_pipeline.sh            Runs Stages 01 to 11 in order
 ├── docs/
-│   └── PIPELINE.md            Input/output contract, corrections, and the
-│                              file behind each claim in the manuscript
+│   ├── PIPELINE.md            Input/output contract, corrections, and the
+│   │                          file behind each claim in the manuscript
+│   └── GSA.md                 The global sensitivity analysis
 ├── pipeline/
 │   ├── paths.py                          (all input and output locations)
 │   ├── disclosure.py                     (Eurostat publication rules for the exports)
@@ -115,6 +129,17 @@ internals are unchanged except for the corrections listed in
 │   ├── 11_visualize_cluster_drivers.py
 │   ├── aggregate_household_loop_reference.py  (the former loop of Stage 03, for checks only)
 │   └── plot_country_cluster_profiles.py  (country cluster figure, from aggregates only)
+├── gsa/
+│   ├── design.py              Factors, outputs and the Sobol' sample
+│   ├── bundle.py              Inputs of the model, from a run (microdata)
+│   ├── model.py               One run: power, clusterings, tests, outputs
+│   ├── sun.py                 Darkness at the capitals (lighting factor)
+│   ├── benchmarks.py          Measured profiles of the validation (Y9 to Y11)
+│   ├── check.py               The model against the run it comes from
+│   ├── run.py                 The runs of the sample (parallel, resumable)
+│   ├── collect.py             The outputs that may be shared
+│   ├── estimators.py          Sobol', Shapley and optimal-transport indices
+│   └── convergence.py         Bootstrap, dummies and convergence
 ├── tests/                     Tests on synthetic data (python -m pytest tests)
 ├── tools/collect_exports.py   Copies the exports that may be shared
 ├── tools/compare_stage03.py   Compares Stage 03 with a reference run, value by value
