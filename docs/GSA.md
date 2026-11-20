@@ -149,7 +149,7 @@ household-day without other demand has no peak, as in the pipeline.
 | X13 | Diarist coverage | all; first-listed | all |
 | X14 | Day type | `DDV7`, then `DDV1`; `DDV1` only | `DDV7`, then `DDV1` |
 | X15 | Survey weight | none; `WGHT1` of the first-listed diarist; mean `WGHT1` | none |
-| X16 | K of the global solution | 6 to 12 | knee (9) |
+| X16 | K of the global solution | 6 to 12 | knee (8 in the run of 20 November 2026; 9 before the same-day rule) |
 | X17 | K of the stratified solutions | 3 to 8 | knee, or 4 |
 | X18 | Share of variance kept by PCA | 0.80 to 0.99 | 0.95 |
 | X19 | Lighting | 0 to 150 W per household while lit in darkness | 0 |
@@ -237,8 +237,64 @@ which the analysis then shows.
 
 ## 8. The analysis
 
-The indices are computed from `gsa_outputs.csv` alone with `gsa/estimators.py`
-(class-based first-order indices, optimal-transport indices and
-nearest-neighbour Shapley effects) and `gsa/convergence.py` (bootstrap
-intervals, the dummies, and the convergence statistics of Sarrazin et al.
-2016 on the nested designs of 128 to 1,024 runs).
+`gsa/analyse.py` computes everything from the shared files alone
+(`gsa_outputs.csv`, `gsa_profiles.npz`), so it runs anywhere:
+
+```bash
+python3 -m gsa.analyse --share ~/hetus_gsa/share --uniform ~/hetus_gsa/share_uniform \
+    --out ~/hetus_gsa/results
+python3 -m gsa.figures --results ~/hetus_gsa/results --out ~/hetus_gsa/figures
+python3 -m gsa.tables --results ~/hetus_gsa/results --out ~/hetus_gsa/tables
+```
+
+`--parts` runs a subset (summary, dependence, indices, knn, surrogate,
+profiles, uniform), so that two processes can share the work; with one thread
+each (`OMP_NUM_THREADS=1`) the whole analysis takes about an hour on two
+cores.
+
+**Dependence between the columns.** The given-data estimators read the effect
+of a factor from the runs in each of its classes, which is right only if each
+class holds the other factors in the same shares as the whole sample. On the
+first 2^m points of a Sobol' sequence this holds at the scale of the dyadic
+intervals for well-behaved pairs of columns, but not for all of them: at 256
+runs each of the 16 dyadic classes of X2 holds a single level of X13, and at
+1,024 runs the share of X13 = first_listed in the 25 classes of X3 ranges from
+0.22 to 0.78, so that X3 took on part of the effect of X13 on the outputs that
+X13 drives (first-order index 0.07 to 0.09, OT index up to 0.23, for an effect
+that the surrogate puts at zero). Scrambling keeps this structure, which is a
+property of the generator matrices. `design_dependence.csv` gives the index of
+every column on the classes of every other at each size.
+
+**Adjusted first-order and OT indices.** Within each class of a factor the
+runs are reweighted by raking (iterative proportional fitting) so that the
+class holds the classes of the three factors with the largest raw first-order
+index on the output (the factor under study set aside; levels, or four
+quantile classes) in the shares of the whole sample, and the class mean and
+the exact W2 between the weighted class and the whole sample (from the
+integral of the quantile function) are taken with these weights. Where a
+driver class is missing from a class, it cannot be restored; the imbalance
+left is reported. The dummies are adjusted alike. Quantile classes number
+min(25, floor(sqrt n)), one fewer when that is a power of two, so that they
+never coincide with the dyadic intervals. `indices.csv` gives both the
+adjusted and the raw estimates.
+
+**Shapley effects.** A gradient-boosting surrogate of each output on the
+factors other than the seeds and on the continuous dummy is fitted to the
+runs (cross-validated R2 reported), and its Shapley effects are computed by
+the random-permutation estimator of Song, Nelson and Staum (2016) on
+independent points, where the dependence of the sample plays no part; they
+are given as shares of Var Y, so that they add up to the share the surrogate
+reproduces. Intervals come from 50 bootstrap refits of the surrogate at the
+largest size. The surrogate also gives first-order and OT indices on 16,384
+independent points, a check of the adjusted estimates. The nearest-neighbour
+estimator of Broto, Bachoc and Depecker (2020), screening with the dummy and
+recomputed on the retained players, is kept as a check; at 1,024 runs its
+errors reach about 0.06 in both directions, larger than the effects it would
+have to resolve.
+
+**Screening and convergence.** An index reads as non-zero when the lower end
+of its 95% interval lies above the 95th percentile of its matched dummy and
+above zero. Convergence is judged by the statistics of Sarrazin, Pianosi and
+Wagener (2016) on the nested designs (`convergence_indices.csv`,
+`convergence_knn.csv`; criteria in `gsa/convergence.py`) and by the change of
+the surrogate's Shapley effects from 512 to 1,024 runs.

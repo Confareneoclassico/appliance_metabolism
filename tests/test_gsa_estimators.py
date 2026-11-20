@@ -116,3 +116,35 @@ def test_convergence_statistics_on_ishigami():
     assert last["stat_ranking"] < 1
     assert last["lo"][1] < S_ISHIGAMI[1] < last["hi"][1] + 0.02
     assert "max_change" in last
+
+
+def test_shapley_multi_matches_single_and_noise():
+    rng = np.random.default_rng(6)
+    u = rng.random((512, 4))
+    y1 = ishigami(u[:, :3])
+    y2 = y1 + 2.0 * rng.standard_normal(512)                       # a noisy output
+    players = [[0], [1], [2]]
+    sh, share = est.shapley_knn_multi(u, np.column_stack([y1, y1]), players, k=3, noise=False)
+    assert np.allclose(sh[:, 0], est.shapley_knn(u, y1, players, k=3)) and np.allclose(share, 0)
+    sh, share = est.shapley_knn_multi(u, np.column_stack([y1, y2]), players, k=3)
+    assert np.allclose(sh.sum(axis=0) + share, 1.0)
+    # on a smooth model the residual share is the noise: Y = X1 + 2 X2 + e
+    lin = u[:, 0] + 2 * u[:, 1]
+    y3 = lin + 0.5 * rng.standard_normal(512)
+    sh3, share3 = est.shapley_knn_multi(u, np.column_stack([lin, y3]), players, k=3)
+    assert share3[0] < 0.05
+    assert share3[1] == pytest.approx(0.25 / y3.var(), abs=0.05)
+    assert np.allclose(sh3[:, 0], [1 / 5, 4 / 5, 0], atol=0.06)
+    counts = rng.multinomial(512, np.full(512, 1 / 512), size=20)
+    sh2, share2, shb, shareb = est.shapley_knn_multi(u, np.column_stack([y1, y2]), players, k=3,
+                                                     counts=counts)
+    assert np.allclose(sh2, sh) and shb.shape == (20, 3, 2) and shareb.shape == (20, 2)
+    assert np.allclose(shb.sum(axis=1) + shareb, 1.0)
+
+
+def test_song_shapley_on_ishigami():
+    f = lambda x: ishigami(x)                                     # noqa: E731
+    sample = lambda r, g: g.random((r, 3))                        # noqa: E731
+    sh, var_f = est.song_shapley(f, sample, [[0], [1], [2]], n_perm=20000, seed=1)
+    assert var_f == pytest.approx(V, rel=0.05)
+    assert np.allclose(sh, SH_ISHIGAMI, atol=0.03) and sh.sum() == pytest.approx(1.0)
