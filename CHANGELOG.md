@@ -2,9 +2,15 @@
 
 ## Unreleased
 
-`gsa.run` records the versions of Python, NumPy, SciPy and scikit-learn in
-the folder of the runs and in every run, and refuses to resume in an
-environment with other versions; `gsa.collect` reports the versions found.
+`gsa/analyse.py`, `gsa/figures.py` and `gsa/tables.py` compute, draw and
+tabulate the sensitivity analysis from the shared files (`docs/GSA.md`
+Section 8). The Sobol' columns turned out to be dependent at the scale of the
+classes of the given-data estimators, so the first-order and OT indices are
+adjusted by raking the runs of each class to the shares of the leading
+factors of the output, quantile classes never number a power of two, and
+the Shapley effects come from a gradient-boosting surrogate evaluated on
+independent points, with the nearest-neighbour estimator kept as a check. An
+index counts as non-zero only above zero as well as above its dummy.
 
 The console follows the publication rules as the exports do (`docs/PIPELINE.md`
 Section 3.18). Stage 10 pools the largest numbers of diarists into one class
