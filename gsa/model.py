@@ -176,7 +176,7 @@ def indicator(groups, n_groups, weight):
 
 
 class Model:
-    def __init__(self, folder, n_init=10, mmap=True):
+    def __init__(self, folder, n_init=20, mmap=True):
         folder = Path(folder)
         self.meta = json.loads((folder / "meta.json").read_text())
         e = load_group(folder, "entries", mmap)

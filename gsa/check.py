@@ -166,7 +166,7 @@ def main():
     model = Model(args.bundle, n_init=args.n_init)
     processed = args.processed or Path(model.meta["processed"])
     print(f"Running the model at the baseline on {model.n:,} household-days, with K chosen by the "
-          f"knee in every solution (on HETUS 2010 this takes 10 to 30 minutes)", flush=True)
+          f"knee in every solution (a few minutes for HETUS 2010)", flush=True)
     done = []
 
     def progress(name, k):

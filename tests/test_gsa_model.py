@@ -15,6 +15,7 @@ of Stages 01 to 08 (three countries, households of one to three diarists):
 import importlib
 import importlib.util
 import json
+import re
 import sys
 
 import numpy as np
@@ -55,6 +56,7 @@ def synthetic_run(tmp_path_factory):
     for script in STAGES:
         done = run_stage(script, dirs, {"HETUS_COUNTRIES": "BE,FR,NL", "MPLBACKEND": "Agg"})
         assert done.returncode == 0, script + done.stdout[-2000:] + done.stderr[-2000:]
+        (base / f"log_{script[:2]}.txt").write_text(done.stdout)
     info = bundle.build(base / "bundle", processed=dirs["HETUS_PROCESSED_DIR"],
                         raw_dir=dirs["HETUS_DATA_DIR"], mapping=ROOT / "data" / "HETUS_mapped_data.csv")
     return base, dirs, info
@@ -130,6 +132,32 @@ def test_baseline_reproduces_the_pipeline(model, synthetic_run):
     lines, failed = check.compare(model, out, synthetic_run[1]["HETUS_PROCESSED_DIR"])
     assert failed == 0, "\n".join(lines)
     assert out["Y8"] == 1.0 and out["solutions"] == 12
+
+
+def test_stage05_console_follows_the_publication_rules(synthetic_run):
+    """The synthetic global solution has clusters of fewer than 50
+    household-days, so the console of Stage 05 must report only published
+    groups, print no table of shares by cluster and category, and print a share
+    only where neither the count behind it nor the rest of its group is below
+    20 (the run of 20 November 2026 printed both kinds)."""
+    out = (synthetic_run[0] / "log_05.txt").read_text()
+    assert "reported together with the largest" in out
+    assert "Distribution across clusters" not in out and "Category " not in out
+    total = synthetic_run[2]["household_days"]
+    sizes = [int(n) for n in re.findall(r"^Size: (\d+) households", out, re.M)]
+    assert sizes and min(sizes) >= 50 and sum(sizes) == total
+    block = out.split("Sizes of the published groups (household-days):")[1].split("\n\n")[0]
+    assert all(int(line.split()[-1]) >= 50 for line in block.strip().splitlines())
+    size = None
+    for line in out.splitlines():
+        m = re.match(r"Size: (\d+) households", line)
+        if m:
+            size = int(m.group(1))
+        m = re.search(r"\(([\d.]+)% in cluster vs ([\d.]+)% overall\)", line)
+        if m:
+            for share, n in ((float(m.group(1)), size), (float(m.group(2)), total)):
+                count = round(share / 100 * n)
+                assert count >= 20 and (n - count == 0 or n - count >= 20), line
 
 
 # --------------------------------------------------------- the power rules

@@ -32,7 +32,7 @@ of the repository, after a complete canonical run of the pipeline (version
 python3 -m gsa.bundle --out ~/hetus_gsa/bundle
 
 # 2. The model at the values of the canonical run against the files of the run
-#    (10 to 30 minutes); the report goes to ~/hetus_gsa/share/
+#    (2 minutes on an eight-core laptop); the report goes to ~/hetus_gsa/share/
 python3 -m gsa.check --bundle ~/hetus_gsa/bundle --threads 8
 
 # 3. Pilot: the first runs with two settings, which print the time per run
@@ -126,8 +126,8 @@ tests (scaled to the number of observations) and K-means (`sample_weight`),
 while standardisation and PCA are unweighted, as in the pipeline. Every
 solution is standardised, reduced by PCA to the share X18 of the variance and
 clustered by K-means with K = X16 (global) or X17 (stratified, at most a tenth
-of the stratum as in Stage 06), seed X21 and 10 starts (`--n-init`; the final
-fits of the pipeline use 20). The base load shifts every slot equally and
+of the stratum as in Stage 06), seed X21 and 20 starts, as in the final fits
+of the pipeline (`--n-init`). The base load shifts every slot equally and
 moves no peak, so peak times are taken from the power without it, and a
 household-day without other demand has no peak, as in the pipeline.
 
@@ -225,14 +225,15 @@ and the estimators.
 
 ## 7. Cost
 
-On a random bundle of the size of HETUS 2010 (192,000 household-days, 6.3
-million entries) one run took 70 to 120 seconds on two threads, K-means taking
-nine tenths of it, and about 1.5 GB of memory. K-means gains little from more
-threads on some machines, which is why the pilot compares one worker with many
-threads against several workers with few; the memory of each worker sets how
-many can run together. The 1,024 runs should take about one night on a laptop
-with eight cores. `--n-init 20` doubles the cost of K-means; fewer starts make the
-partitions depend more on the seed X21, which the analysis then shows.
+On the microdata (191,740 household-days, an eight-core laptop of 2026),
+`gsa.check` took 2 minutes and a pilot with 10 K-means starts took 7 seconds
+per run with four workers of two threads (24 seconds in each worker) and 13
+seconds with one worker of eight threads, so 1,024 runs should take about 2
+hours with 10 starts and about twice as long with the default 20. On a random
+bundle of the same size a run needed about 1.5 GB of memory, K-means taking
+nine tenths of the time; the memory of each worker sets how many can run
+together. Fewer starts make the partitions depend more on the seed X21,
+which the analysis then shows.
 
 ## 8. The analysis
 

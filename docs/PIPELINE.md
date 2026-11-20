@@ -586,6 +586,39 @@ same weekday in another month in fewer than 20 multi-diarist household-days in
 ten countries, none in Romania and 1.95% in Luxembourg, which bounds the
 undetectable ones at well under 1% of the multi-diarist household-days.
 
+### 3.18 Console output under the publication rules (version 1.1.0, November 2026)
+
+The console log of a run is a working file, like the processed folder. A
+check of the log of the canonical run of 20 November 2026 found figures in it
+that the publication rules do not allow off the machine. Stage 10 printed the
+number of household-days for every number of diarists, down to classes of a
+few household-days, and the largest number of diarists by country, and drew
+the same in its figures. Stage 05 printed, for each background variable, the
+table of shares by cluster and category, the shares of single categories in
+the most distinctive clusters and in the cluster profiles, from which the
+sizes give the cell counts, small ones included, and it printed the sizes and
+profiles of the clusters as found, so also of any cluster below 50
+household-days.
+
+Stage 10 now pools the largest numbers of diarists into one class of at least
+50 household-days (`disclosure.pool_tail`; 7 and more in HETUS 2010, as in
+Stage 09), gives no minimum or maximum, and draws its box plot from the 5th to
+the 95th percentile without single household-days. Stage 05 reports the
+published groups in every printout and figure of its categorical analysis
+(sizes, distances, pairwise comparisons, profiles and the figure of each
+variable), prints no table of shares, and prints a share only where neither
+the count behind it nor the rest of its group is below 20 (`share_text`). Its
+test statistics, the files `categorical_feature_statistics.csv` and
+`clustering_results.csv`, and every export are unchanged. The diagnostic
+figures of Stages 05 and 11 still show the composition of published groups by
+category, which for rare categories rests on few household-days, so they stay
+on the machine with the log. `tools/collect_exports.py` takes several logs,
+for a run made in parts (`--log run_log.txt run_log_stage05.txt`), and copies
+only its extract of them, and `run_log*.txt` is ignored by git. Tests:
+`test_stage10_console.py`, `test_disclosure.py` (`pool_tail`) and
+`test_gsa_model.py` (the console of Stage 05 on a run with clusters below 50
+household-days).
+
 ## 4. Design choices that constrain interpretation
 
 Person-level attributes come from the first-listed diarist. Stage 03 sets

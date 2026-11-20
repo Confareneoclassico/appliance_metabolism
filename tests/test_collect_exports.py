@@ -15,7 +15,7 @@ def run_collector(dirs, out, log=None):
     env.update({k: str(v) for k, v in dirs.items()})
     cmd = [sys.executable, str(ROOT / "tools" / "collect_exports.py"), "--out", str(out)]
     if log:
-        cmd += ["--log", str(log)]
+        cmd += ["--log"] + [str(one) for one in (log if isinstance(log, list) else [log])]
     return subprocess.run(cmd, env=env, capture_output=True, text=True)
 
 
@@ -66,6 +66,23 @@ def test_tagged_stage01_lines_are_extracted(stage_dirs, tmp_path):
     assert extract == ["  [secondary 999] NL: 89.90%",
                        "  [same-day rule] LU: 1,285 multi-diarist, 20-49 other weekday, 20-49 same weekday"]
     assert done.returncode == 0
+
+
+def test_several_logs_of_a_run_made_in_parts(stage_dirs, tmp_path):
+    proc = stage_dirs["HETUS_PROCESSED_DIR"]
+    pd.DataFrame({"cluster": [0], "size": [400]}).to_csv(proc / "cluster_summary.csv", index=False)
+    first, second = tmp_path / "run_log.txt", tmp_path / "run_log_stage05.txt"
+    first.write_text("  [same-day rule] all: 12,345 multi-diarist, 678 left out\n"
+                     "  6 diarist(s): 4 household-days (0.0%)\n")
+    second.write_text("Silhouette width (10,000 household-days): 0.130\n"
+                      "  half-sample 1/10: ARI = 0.912\n")
+    done = run_collector(stage_dirs, tmp_path / "share", [first, second])
+    assert done.returncode == 0
+    extract = (tmp_path / "share" / "log_extract.txt").read_text().splitlines()
+    assert extract == ["  [same-day rule] all: 12,345 multi-diarist, 678 left out",
+                       "Silhouette width (10,000 household-days): 0.130",
+                       "  half-sample 1/10: ARI = 0.912"]
+    assert not (tmp_path / "share" / "run_log.txt").exists()
 
 
 def test_wrong_processed_folder_is_reported(stage_dirs, tmp_path):
