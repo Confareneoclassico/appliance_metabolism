@@ -319,7 +319,7 @@ def test_weights_and_weighted_run(model, synthetic_run):
 
 
 # ------------------------------------------------------ the runner and collect
-def test_runner_resume_and_collect(synthetic_run, capsys):
+def test_runner_resume_and_collect(synthetic_run, capsys, monkeypatch):
     base = synthetic_run[0]
     runs = base / "runs"
     args = ["--bundle", str(base / "bundle"), "--runs", str(runs), "--m", "2", "--n-init", "3"]
@@ -330,6 +330,18 @@ def test_runner_resume_and_collect(synthetic_run, capsys):
     assert "4 of 4 runs already done" in capsys.readouterr().out
     with pytest.raises(SystemExit):
         gsa_run.main(args[:-1] + ["5"])                   # other n_init: refused
+    real = gsa_run.library_versions()
+    with monkeypatch.context() as mp:                     # another scikit-learn: refused
+        mp.setattr(gsa_run, "library_versions", lambda: {**real, "scikit-learn": "0.0"})
+        with pytest.raises(SystemExit):
+            gsa_run.main(args)
+    dpath = runs / "design.json"                          # a folder begun without versions
+    d = json.loads(dpath.read_text())
+    d.pop("versions")
+    dpath.write_text(json.dumps(d))
+    gsa_run.main(args)
+    assert json.loads(dpath.read_text())["versions"] == real
+    assert json.loads((runs / "run_00000.json").read_text())["versions"] == real
     rec = json.loads((runs / "run_00003.json").read_text())
     assert rec["coordinates"] == pytest.approx(design.sample(2, seed=gsa_run.SAMPLE_SEED)[3].tolist())
     table, profiles = collect.collect(runs, base / "share")
@@ -337,3 +349,5 @@ def test_runner_resume_and_collect(synthetic_run, capsys):
     assert set(OUTPUTS) <= set(table.columns) and np.isfinite(table[OUTPUTS].to_numpy(float)).all()
     shared = pd.read_csv(base / "share" / "gsa_outputs.csv")
     assert len(shared) == 4 and (base / "share" / "manifest.txt").is_file()
+    manifest = (base / "share" / "manifest.txt").read_text()
+    assert "in 4 runs" in manifest and "WARNING" not in manifest
