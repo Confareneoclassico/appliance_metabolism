@@ -58,8 +58,11 @@ files do not match. `gsa.check` exits with status 1 if any comparison fails.
 Run i of `gsa.run` is always point i of the same sequence, so the pilot runs
 are the first runs of the sample, and the runs can be made in any number of
 sittings; a folder holds the runs of one set of settings (number of K-means
-starts, distribution of the powers, bundle), and `gsa.run` refuses to add runs
-made with other settings. A run that fails leaves its traceback in
+starts, distribution of the powers, bundle, and the versions of Python, NumPy,
+SciPy and scikit-learn, since other versions can give other partitions), and
+`gsa.run` refuses to add runs made with other settings or in another
+environment. A folder begun before the versions were kept takes those of the
+next call, so that call must be made in the environment of the earlier runs. A run that fails leaves its traceback in
 `run_iiiii.error` and is made again by the next call.
 
 ## 2. The inputs (gsa/bundle.py)

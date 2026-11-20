@@ -112,6 +112,11 @@ def collect(runs, out, check=None):
     for y in OUTPUTS:
         v = pd.to_numeric(table[y], errors="coerce")
         lines.append(f"{y}: {int(v.isna().sum())} missing, range {v.min():.4g} to {v.max():.4g}")
+    versions = pd.Series([json.dumps(r.get("versions"), sort_keys=True) if r.get("versions")
+                          else "not recorded" for r in records]).value_counts()
+    lines.append("Library versions: " + "; ".join(f"{v} in {c} runs" for v, c in versions.items()))
+    if (versions.index != "not recorded").sum() > 1:
+        lines.append("WARNING: the runs were made with different library versions")
     sol = table["solutions"].value_counts().sort_index()
     lines.append("Solutions with a strongest correlate, by run: "
                  + ", ".join(f"{int(k)} in {int(c)} runs" for k, c in sol.items()))
