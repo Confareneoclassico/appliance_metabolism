@@ -13,8 +13,9 @@ Draws, as PDF:
                        output, for the factors read as non-zero and of at least
                        0.02 in some family
   fig_adjustment.pdf   raw against adjusted first-order and OT indices of
-                       every factor and output: the raking moves only the
-                       indices that took on another factor's effect
+                       every factor and output at the two largest sizes: the
+                       raking moves only the indices that took on another
+                       factor's effect
   fig_convergence.pdf  Shapley effects of the surrogate of the leading
                        players against the number of runs (128 to 1,024)
   fig_profiles.pdf     the pooled profile by day type and the hourly shapes of
@@ -195,26 +196,28 @@ def fig_indices(ind, sur, out):
 
 
 def fig_adjustment(ind, out):
-    a = largest(ind)
-    a = a[~a.factor.str.startswith("D_")]
-    fig, axes = plt.subplots(1, 2, figsize=(7.0, 3.4))
-    for ax, fam, title in ((axes[0], "S", "First-order index"), (axes[1], "OT", "OT index")):
-        f = a[a.family == fam]
-        moved = (f.raw - f.point).abs() > 0.03
-        ax.plot([0, 1], [0, 1], color=AXIS, linewidth=0.8, zorder=1)
-        ax.scatter(f.raw[~moved], f.point[~moved], s=9, color=BLUE, edgecolor=SURFACE,
-                   linewidth=0.5, zorder=2, label="Changed by 0.03 or less")
-        ax.scatter(f.raw[moved], f.point[moved], s=14, color=ORANGE, edgecolor=SURFACE,
-                   linewidth=0.5, zorder=3, label="Changed by more than 0.03")
-        lim = 0.3
-        ax.set_xlim(-0.01, lim)
-        ax.set_ylim(-0.01, lim)
-        ax.set_xlabel("Raw (classes of the sample as drawn)")
-        ax.set_ylabel("Adjusted (shares of the drivers restored)")
-        ax.set_title(f"{title} (indices up to 0.3)", loc="left")
-        ax.grid(True)
-        ax.set_aspect("equal")
-        ax.legend(loc="upper left")
+    """Raw against adjusted indices at the two largest sizes (one row each)."""
+    sizes = sorted(ind.N.unique())[-2:]
+    fig, axes = plt.subplots(len(sizes), 2, figsize=(7.0, 3.3 * len(sizes)), squeeze=False)
+    for row, N in zip(axes, sizes):
+        a = ind[(ind.N == N) & ~ind.factor.str.startswith("D_")]
+        for ax, fam, title in ((row[0], "S", "First-order index"), (row[1], "OT", "OT index")):
+            f = a[a.family == fam]
+            moved = (f.raw - f.point).abs() > 0.03
+            ax.plot([0, 1], [0, 1], color=AXIS, linewidth=0.8, zorder=1)
+            ax.scatter(f.raw[~moved], f.point[~moved], s=9, color=BLUE, edgecolor=SURFACE,
+                       linewidth=0.5, zorder=2, label="Changed by 0.03 or less")
+            ax.scatter(f.raw[moved], f.point[moved], s=14, color=ORANGE, edgecolor=SURFACE,
+                       linewidth=0.5, zorder=3, label="Changed by more than 0.03")
+            lim = 0.3
+            ax.set_xlim(-0.01, lim)
+            ax.set_ylim(-0.01, lim)
+            ax.set_xlabel("Raw (classes of the sample as drawn)")
+            ax.set_ylabel("Adjusted (shares of the drivers restored)")
+            ax.set_title(f"{title}, {N:,} runs", loc="left")
+            ax.grid(True)
+            ax.set_aspect("equal")
+            ax.legend(loc="upper left")
     fig.tight_layout()
     fig.savefig(out / "fig_adjustment.pdf")
     plt.close(fig)
@@ -245,10 +248,11 @@ def fig_convergence(sur, out):
             ax.annotate(text, (N, yl), xytext=(6, 0), textcoords="offset points", fontsize=5.5,
                         color=TEXT2, va="center")
         ax.set_xscale("log", base=2)
-        ax.set_xticks([128, 256, 512, 1024])
-        ax.set_xticklabels(["128", "256", "512", "1,024"])
+        sizes = sorted(s.N.unique())
+        ax.set_xticks(sizes)
+        ax.set_xticklabels([f"{n:,}" for n in sizes], fontsize=6)
         ax.minorticks_off()
-        ax.set_xlim(100, 3200)
+        ax.set_xlim(sizes[0] * 0.8, sizes[-1] * 3.2)
         ax.set_ylim(min(0, ax.get_ylim()[0]), max(1.0, ax.get_ylim()[1]))
         ax.set_title(SHORT_OUTPUT[y], loc="left")
         ax.grid(axis="y")

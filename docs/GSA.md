@@ -265,8 +265,11 @@ runs each of the 16 dyadic classes of X2 holds a single level of X13, and at
 0.22 to 0.78, so that X3 took on part of the effect of X13 on the outputs that
 X13 drives (first-order index 0.07 to 0.09, OT index up to 0.23, for an effect
 that the surrogate puts at zero). Scrambling keeps this structure, which is a
-property of the generator matrices. `design_dependence.csv` gives the index of
-every column on the classes of every other at each size.
+property of the generator matrices. The dependence fades as the sample grows:
+five ordered pairs lie above 0.1 at 1,024 runs and one at 2,048, where the
+classes of X3 hold between 0.49 and 0.51 of first-listed coverage and the raw
+indices agree with the adjusted ones of 1,024 runs. `design_dependence.csv`
+gives the index of every column on the classes of every other at each size.
 
 **Adjusted first-order and OT indices.** Within each class of a factor the
 runs are reweighted by raking (iterative proportional fitting) so that the
@@ -291,13 +294,16 @@ reproduces. Intervals come from 50 bootstrap refits of the surrogate at the
 largest size. The surrogate also gives first-order and OT indices on 16,384
 independent points, a check of the adjusted estimates. The nearest-neighbour
 estimator of Broto, Bachoc and Depecker (2020), screening with the dummy and
-recomputed on the retained players, is kept as a check; at 1,024 runs its
-errors reach about 0.06 in both directions, larger than the effects it would
-have to resolve.
+recomputed on the retained players, is kept as a check only: at 2,048 runs its
+errors reach 0.27 (an effect of 1.13 for X13 on Y6, the appliance group
+understated by up to 0.17), since seven of the fourteen players are discrete
+and their ties leave the choice of neighbours to the order of the runs.
 
-**Screening and convergence.** An index reads as non-zero when the lower end
-of its 95% interval lies above the 95th percentile of its matched dummy and
-above zero. Convergence is judged by the statistics of Sarrazin, Pianosi and
+**Screening and convergence.** An index reads as non-zero when the 2.5th
+percentile of its bootstrap resamples lies above the 95th percentile of the
+resamples of its matched dummy and above zero. The reported intervals of the
+class-based indices are the percentile intervals shifted by the bootstrap
+bias. Convergence is judged by the statistics of Sarrazin, Pianosi and
 Wagener (2016) on the nested designs (`convergence_indices.csv`,
 `convergence_knn.csv`; criteria in `gsa/convergence.py`) and by the change of
 the surrogate's Shapley effects from 512 to 1,024 runs.
