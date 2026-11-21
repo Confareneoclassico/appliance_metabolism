@@ -1,7 +1,7 @@
 """Indices of the sensitivity analysis from the files of gsa.collect.
 
     python3 -m gsa.analyse --share SHARE [--uniform SHARE_UNIFORM] --out FOLDER
-                           [--B 500] [--sizes 128,256,512,1024]
+                           [--B 500] [--sizes 128,256,...]
 
 Everything is computed from the aggregate outputs that gsa.collect writes, so
 it runs anywhere. In FOLDER:
@@ -64,7 +64,7 @@ OUTPUTS = ["Y1", "Y2", "Y2b", "Y3", "Y4", "Y5", "Y6", "Y7", "Y8", "Y9", "Y10", "
 FACTOR_IDS = [f.id for f in design.FACTORS]
 SEEDS = [f.id for f in design.FACTORS if f.kind == "seed"]
 COLUMNS = FACTOR_IDS + design.DUMMIES
-SIZES = (128, 256, 512, 1024)
+SIZES = tuple(2 ** k for k in range(7, 14))      # nested designs up to the runs present
 
 
 def matched_dummy(fid):
@@ -710,7 +710,8 @@ def main(argv=None):
     parser.add_argument("--uniform", type=Path, default=None)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--B", type=int, default=500)
-    parser.add_argument("--sizes", default="128,256,512,1024")
+    parser.add_argument("--sizes", default=",".join(map(str, SIZES)),
+                        help="nested designs to analyse (those above the number of runs are skipped)")
     parser.add_argument("--n-perm", type=int, default=10000)
     parser.add_argument("--B-surrogate", type=int, default=50)
     parser.add_argument("--parts", default=",".join(PARTS),

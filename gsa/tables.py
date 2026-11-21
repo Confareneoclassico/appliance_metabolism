@@ -12,7 +12,7 @@ Writes one .tex file per table (booktabs, caption above the table):
                        surrogate's Shapley effect with its interval and the
                        adjusted first-order and OT indices (longtable)
   tab_convergence.tex  statistics of Sarrazin et al. (2016) for the adjusted
-                       indices at 512 and 1,024 runs, and the largest change of
+                       indices at the largest size, and the largest change of
                        a Shapley effect of the surrogate between them
   tab_uniform.tex      the 256 runs with powers uniform in W against the same
                        points with log-uniform powers
@@ -34,6 +34,11 @@ from gsa.figures import OUTPUT_LABEL, PLAYER_LABEL, ROW_ORDER, is_true  # noqa: 
 OUTPUTS = list(OUTPUT_LABEL)
 UNITS = {"Y2b": "h", "Y3": "\\%", "Y4": "\\%"}
 CRITERIA = {"ranking": 1.0, "screening": 0.05, "indices": 0.05, "max_change": 0.02}
+
+
+def largest_n(results):
+    """Number of runs of the largest nested design in the results."""
+    return int(pd.read_csv(results / "indices.csv", usecols=["N"]).N.max())
 
 
 def num(x, d=3):
@@ -74,8 +79,8 @@ def table_outputs(results):
         body += (f"{OUTPUT_LABEL[y]}{unit} & {num(r.canonical, d)} & {pct} & {num(r['median'], d)} & "
                  f"{num(r.p05, d)} to {num(r.p95, d)} \\\\\n")
     body += "\\bottomrule\n"
-    return wrap(body, "Outputs at the canonical settings and over the 1,024 runs. The percentile of "
-                "the canonical value is the share of runs below it (ties counted half).",
+    return wrap(body, f"Outputs at the canonical settings and over the {largest_n(results):,} runs. The "
+                "percentile of the canonical value is the share of runs below it (ties counted half).",
                 "tab:outputs", "lrrrr", size="\\footnotesize")
 
 
@@ -148,11 +153,12 @@ def table_convergence(results):
     sur = pd.read_csv(results / "surrogate.csv")
     sur = sur[sur.shapley.notna() & (sur.player != "D_cont")]
     sizes = sorted(sur.N.unique())
-    body = ("\\toprule\n & \\multicolumn{4}{c}{$S_i$ at 1,024 runs} & \\multicolumn{4}{c}{$\\iota_i$ at "
-            "1,024 runs} & Shapley \\\\\n\\cmidrule(lr){2-5}\\cmidrule(lr){6-9}\\cmidrule(lr){10-10}\n"
+    N = c.N.max()
+    prev_n = sorted(c.N.unique())[-2]
+    body = (f"\\toprule\n & \\multicolumn{{4}}{{c}}{{$S_i$ at {N:,} runs}} & \\multicolumn{{4}}{{c}}{{$\\iota_i$ at "
+            f"{N:,} runs}} & Shapley \\\\\n\\cmidrule(lr){{2-5}}\\cmidrule(lr){{6-9}}\\cmidrule(lr){{10-10}}\n"
             "Output & Rank. & Screen. & Indices & Change & Rank. & Screen. & Indices & Change & Change \\\\\n"
             "\\midrule\n")
-    N = c.N.max()
     for y in OUTPUTS:
         cells = []
         for fam in ("S", "OT"):
@@ -166,12 +172,12 @@ def table_convergence(results):
         cells.append(num(ch, 3) + ("" if ch < CRITERIA["max_change"] else "$^{*}$"))
         body += f"{y} & " + " & ".join(cells) + " \\\\\n"
     body += "\\bottomrule\n"
-    return wrap(body, "Convergence at 1,024 runs. Ranking is the 95th percentile of the adjusted "
+    return wrap(body, f"Convergence at {N:,} runs. Ranking is the 95th percentile of the adjusted "
                 "rank difference over the bootstrap resamples (criterion below 1). Screening and "
                 "indices are the widest 95\\% intervals among the factors read as zero and as "
-                "non-zero (below 0.05). Change is the largest change of an index from 512 to 1,024 "
-                "runs (below 0.02), for the Shapley effects of the surrogate too. $^{*}$: criterion "
-                "not met.",
+                f"non-zero (below 0.05). Change is the largest change of an index from {prev_n:,} to "
+                f"{N:,} runs (below 0.02), for the Shapley effects of the surrogate too. $^{{*}}$: "
+                "criterion not met.",
                 "tab:convergence", "lrrrrrrrrr", size="\\footnotesize")
 
 
@@ -217,26 +223,32 @@ def table_knn(results):
             cells.append(f"{num(sv, 2)} / {num(kv, 2)}")
         body += f"{y} & " + " & ".join(cells) + " \\\\\n"
     body += "\\bottomrule\n"
-    return wrap(body, "Shapley effects at 1,024 runs: surrogate / nearest neighbours (step 2 where "
+    return wrap(body, f"Shapley effects at {N:,} runs: surrogate / nearest neighbours (step 2 where "
                 "the player was retained, step 1 otherwise).", "tab:knn",
                 "l" + "r" * len(players), size="\\small", fit=True)
 
 
 def table_adjustment(results):
+    """Indices that the adjustment moves by more than 0.03 at either of the two
+    largest sizes, raw and adjusted at both."""
     ind = pd.read_csv(results / "indices.csv")
-    a = ind[(ind.N == ind.N.max()) & ~ind.factor.str.startswith("D_")]
-    a = a[(a.raw - a.point).abs() > 0.03].sort_values(["factor", "output", "family"])
-    body = ("\\toprule\nFactor & Output & Family & Raw & Adjusted & Leading drivers & Imbalance left \\\\\n"
-            "\\midrule\n")
-    for _, r in a.iterrows():
-        fam = "$S_i$" if r.family == "S" else "$\\iota_i$"
-        body += (f"{label(r.factor)} & {r.output} & {fam} & {num(r.raw)} & {num(r.point)} & "
-                 f"{r.drivers} & {num(r.imbalance, 2)} \\\\\n")
-    if a.empty:
-        body += "\\multicolumn{7}{l}{none} \\\\\n"
+    ind = ind[~ind.factor.str.startswith("D_")]
+    sizes = sorted(ind.N.unique())[-2:]
+    keyed = {N: ind[ind.N == N].set_index(["factor", "output", "family"]) for N in sizes}
+    moved = sorted({k for N in sizes for k, r in keyed[N].iterrows() if abs(r.raw - r.point) > 0.03})
+    head = " & ".join(f"Raw, {N:,} & Adjusted, {N:,}" for N in sizes)
+    body = f"\\toprule\nFactor & Output & Family & {head} \\\\\n\\midrule\n"
+    for f, y, fam in moved:
+        cells = " & ".join(f"{num(keyed[N].loc[(f, y, fam)].raw)} & {num(keyed[N].loc[(f, y, fam)].point)}"
+                           for N in sizes)
+        fam_tex = "$S_i$" if fam == "S" else "$\\iota_i$"
+        body += f"{label(f)} & {y} & {fam_tex} & {cells} \\\\\n"
+    if not moved:
+        body += f"\\multicolumn{{{3 + 2 * len(sizes)}}}{{l}}{{none}} \\\\\n"
     body += "\\bottomrule\n"
-    return wrap(body, "Indices at 1,024 runs that the adjustment moves by more than 0.03.",
-                "tab:adjustment", "lllrrlr", size="\\footnotesize")
+    caption = ("Indices that the adjustment moves by more than 0.03 at "
+               + " or ".join(f"{N:,}" for N in sizes) + " runs, raw and adjusted at each size.")
+    return wrap(body, caption, "tab:adjustment", "lll" + "rr" * len(sizes), size="\\footnotesize")
 
 
 def main(argv=None):
