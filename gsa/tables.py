@@ -17,7 +17,10 @@ Writes one .tex file per table (booktabs, caption above the table):
   tab_uniform.tex      the 256 runs with powers uniform in W against the same
                        points with log-uniform powers
   tab_knn.tex          nearest-neighbour against surrogate Shapley effects
-  tab_adjustment.tex   the indices that the adjustment moves by more than 0.03
+  tab_adjustment.tex   the indices that the adjustment moves by more than 0.03 at
+                       1,024 runs or more
+  tab_stability.tex    screening at 0.05 and ranking from one nested size to the
+                       next, for the last two steps
 """
 import argparse
 import sys
@@ -210,7 +213,9 @@ def table_knn(results):
     N = k.N.max()
     k1 = k[(k.N == N) & (k.step == 1)].set_index(["output", "player"]).point
     k2 = k[(k.N == N) & (k.step == 2)].set_index(["output", "player"]).point
-    s = sur[(sur.N == sur.N.max()) & sur.shapley.notna()].set_index(["output", "player"]).shapley
+    # the surrogate at the same size as the nearest-neighbour estimates
+    n_s = N if N in set(sur.N) else sur.N.max()
+    s = sur[(sur.N == n_s) & sur.shapley.notna()].set_index(["output", "player"]).shapley
     players = ["P_appliances", "X13", "X19", "X16", "X15", "X12", "X10", "X17"]
     short = {"P_appliances": "Powers", "X13": "Coverage", "X19": "Lighting", "X16": "K, global",
              "X15": "Weight", "X12": "Base load", "X10": "Ownership", "X17": "K, strat."}
@@ -228,16 +233,77 @@ def table_knn(results):
                 "l" + "r" * len(players), size="\\small", fit=True)
 
 
+def stability_counts(a, b, threshold=0.05):
+    """Screening and ranking from one size (a) to the next (b), two Series of
+    indices on the same factors: crossings of the threshold, whether the
+    order of the factors above it at both sizes is kept, and whether the top
+    two and top five keep their members and order."""
+    a = a.reindex(b.index)
+    up = int(((a < threshold) & (b >= threshold)).sum())
+    down = int(((a >= threshold) & (b < threshold)).sum())
+    both = [f for f in b.sort_values(ascending=False).index if a[f] >= threshold and b[f] >= threshold]
+    kept = list(a.loc[both].sort_values(ascending=False).index) == both
+    ra = list(a.sort_values(ascending=False).index)
+    rb = list(b.sort_values(ascending=False).index)
+    return up, down, kept, ra[:2] == rb[:2], ra[:5] == rb[:5]
+
+
+def table_stability(results, threshold=0.05):
+    """For the last two steps between nested sizes, by family: indices that
+    cross the threshold either way, and the outputs (of twelve) whose order
+    above the threshold, top two and top five are kept."""
+    ind = pd.read_csv(results / "indices.csv")
+    sur = pd.read_csv(results / "surrogate.csv")
+    factors = [f"X{i}" for i in range(1, 22)]
+    sizes = sorted(set(ind.N) & set(sur.N))
+    steps = list(zip(sizes[:-1], sizes[1:]))[-2:]
+
+    def get(fam, y, N):
+        if fam == "Shapley":
+            x = sur[(sur.N == N) & (sur.output == y) & sur.shapley.notna() & (sur.player != "D_cont")]
+            return x.set_index("player").shapley
+        x = ind[(ind.N == N) & (ind.family == fam) & (ind.output == y) & ind.factor.isin(factors)]
+        return x.set_index("factor").point
+
+    head = " & ".join(f"\\multicolumn{{3}}{{c}}{{{n0:,} to {n1:,} runs}}" for n0, n1 in steps)
+    rules = "".join(f"\\cmidrule(lr){{{2 + 3 * i}-{4 + 3 * i}}}" for i in range(len(steps)))
+    body = (f"\\toprule\n & {head} \\\\\n{rules}\n"
+            " & " + " & ".join(["First-order & OT & Shapley"] * len(steps)) + " \\\\\n\\midrule\n")
+    labels = [f"Below {threshold:.2f}, then at or above it", f"At or above {threshold:.2f}, then below it",
+              f"Order above {threshold:.2f} kept (outputs)", "Top two kept (outputs)",
+              "Top five kept (outputs)"]
+    cells = {k: [] for k in range(5)}
+    for n0, n1 in steps:
+        for fam in ("S", "OT", "Shapley"):
+            counts = [stability_counts(get(fam, y, n0), get(fam, y, n1), threshold) for y in OUTPUTS]
+            cells[0].append(sum(c[0] for c in counts))
+            cells[1].append(sum(c[1] for c in counts))
+            for k in (2, 3, 4):
+                cells[k].append(sum(bool(c[k]) for c in counts))
+    for k, lab in enumerate(labels):
+        body += lab + " & " + " & ".join(str(v) for v in cells[k]) + " \\\\\n"
+    body += "\\bottomrule\n"
+    players = sur[(sur.N == sizes[-1]) & sur.shapley.notna() & (sur.player != "D_cont")].player.nunique()
+    return wrap(body, f"Screening at {threshold:.2f} and ranking from one nested size to the next. "
+                f"First-order and OT indices on the 21 factors one by one, Shapley effects on the {players} "
+                "players other than the dummy (the six powers as one). Counts of indices over the twelve outputs, then the "
+                "number of outputs whose order is kept.", "tab:stability",
+                "l" + "rrr" * len(steps), size="\\footnotesize")
+
+
 def table_adjustment(results):
-    """Indices that the adjustment moves by more than 0.03 at either of the two
-    largest sizes, raw and adjusted at both."""
+    """Indices that the adjustment moves by more than 0.03 at any size of at
+    least 1,024 runs (the last three at most), raw and adjusted at each."""
     ind = pd.read_csv(results / "indices.csv")
     ind = ind[~ind.factor.str.startswith("D_")]
-    sizes = sorted(ind.N.unique())[-2:]
+    sizes = [N for N in sorted(ind.N.unique()) if N >= 1024][-3:] or sorted(ind.N.unique())[-2:]
     keyed = {N: ind[ind.N == N].set_index(["factor", "output", "family"]) for N in sizes}
     moved = sorted({k for N in sizes for k, r in keyed[N].iterrows() if abs(r.raw - r.point) > 0.03})
-    head = " & ".join(f"Raw, {N:,} & Adjusted, {N:,}" for N in sizes)
-    body = f"\\toprule\nFactor & Output & Family & {head} \\\\\n\\midrule\n"
+    groups = " & ".join(f"\\multicolumn{{2}}{{c}}{{{N:,} runs}}" for N in sizes)
+    rules = "".join(f"\\cmidrule(lr){{{4 + 2 * i}-{5 + 2 * i}}}" for i in range(len(sizes)))
+    head = " & ".join("Raw & Adjusted" for N in sizes)
+    body = (f"\\toprule\n & & & {groups} \\\\\n{rules}\n"
+            f"Factor & Output & Family & {head} \\\\\n\\midrule\n")
     for f, y, fam in moved:
         cells = " & ".join(f"{num(keyed[N].loc[(f, y, fam)].raw)} & {num(keyed[N].loc[(f, y, fam)].point)}"
                            for N in sizes)
@@ -247,7 +313,8 @@ def table_adjustment(results):
         body += f"\\multicolumn{{{3 + 2 * len(sizes)}}}{{l}}{{none}} \\\\\n"
     body += "\\bottomrule\n"
     caption = ("Indices that the adjustment moves by more than 0.03 at "
-               + " or ".join(f"{N:,}" for N in sizes) + " runs, raw and adjusted at each size.")
+               + (", ".join(f"{N:,}" for N in sizes[:-1]) + " or " if len(sizes) > 1 else "")
+               + f"{sizes[-1]:,} runs, raw and adjusted at each size.")
     return wrap(body, caption, "tab:adjustment", "lll" + "rr" * len(sizes), size="\\footnotesize")
 
 
@@ -260,7 +327,8 @@ def main(argv=None):
     r = args.results
     for name, f in (("outputs", table_outputs), ("dependence", table_dependence),
                     ("indices", table_indices), ("convergence", table_convergence),
-                    ("uniform", table_uniform), ("knn", table_knn), ("adjustment", table_adjustment)):
+                    ("uniform", table_uniform), ("knn", table_knn), ("adjustment", table_adjustment),
+                    ("stability", table_stability)):
         try:
             (args.out / f"tab_{name}.tex").write_text(f(r))
         except FileNotFoundError as e:

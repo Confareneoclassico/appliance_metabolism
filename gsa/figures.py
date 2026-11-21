@@ -13,9 +13,9 @@ Draws, as PDF:
                        output, for the factors read as non-zero and of at least
                        0.02 in some family
   fig_adjustment.pdf   raw against adjusted first-order and OT indices of
-                       every factor and output at the two largest sizes: the
-                       raking moves only the indices that took on another
-                       factor's effect
+                       every factor and output at 1,024 runs and at the
+                       largest size: the raking moves only the indices that
+                       took on another factor's effect
   fig_convergence.pdf  Shapley effects of the surrogate of the leading
                        players against the number of runs (128 to 1,024)
   fig_profiles.pdf     the pooled profile by day type and the hourly shapes of
@@ -196,8 +196,10 @@ def fig_indices(ind, sur, out):
 
 
 def fig_adjustment(ind, out):
-    """Raw against adjusted indices at the two largest sizes (one row each)."""
-    sizes = sorted(ind.N.unique())[-2:]
+    """Raw against adjusted indices at 1,024 runs and at the largest size (one
+    row each), or at the two largest sizes when there are fewer runs."""
+    all_sizes = sorted(ind.N.unique())
+    sizes = [1024, all_sizes[-1]] if 1024 in all_sizes and all_sizes[-1] > 1024 else all_sizes[-2:]
     fig, axes = plt.subplots(len(sizes), 2, figsize=(7.0, 3.3 * len(sizes)), squeeze=False)
     for row, N in zip(axes, sizes):
         a = ind[(ind.N == N) & ~ind.factor.str.startswith("D_")]
@@ -250,7 +252,8 @@ def fig_convergence(sur, out):
         ax.set_xscale("log", base=2)
         sizes = sorted(s.N.unique())
         ax.set_xticks(sizes)
-        ax.set_xticklabels([f"{n:,}" for n in sizes], fontsize=6)
+        ax.set_xticklabels([f"{n:,}" for n in sizes], fontsize=6, rotation=45, ha="right",
+                           rotation_mode="anchor")
         ax.minorticks_off()
         ax.set_xlim(sizes[0] * 0.8, sizes[-1] * 3.2)
         ax.set_ylim(min(0, ax.get_ylim()[0]), max(1.0, ax.get_ylim()[1]))
