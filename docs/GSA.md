@@ -266,10 +266,12 @@ runs each of the 16 dyadic classes of X2 holds a single level of X13, and at
 X13 drives (first-order index 0.07 to 0.09, OT index up to 0.23, for an effect
 that the surrogate puts at zero). Scrambling keeps this structure, which is a
 property of the generator matrices. The dependence fades as the sample grows:
-five ordered pairs lie above 0.1 at 1,024 runs and one at 2,048, where the
-classes of X3 hold between 0.49 and 0.51 of first-listed coverage and the raw
-indices agree with the adjusted ones of 1,024 runs. `design_dependence.csv`
-gives the index of every column on the classes of every other at each size.
+five ordered pairs lie above 0.1 at 1,024 runs, one at 2,048 (where the
+classes of X3 hold between 0.49 and 0.51 of first-listed coverage) and none
+above 0.05 at 4,096 (largest 0.024, against 0.006 for independent columns).
+At 2,048 and 4,096 runs the raw indices agree with the adjusted ones of 1,024
+runs. `design_dependence.csv` gives the index of every column on the classes
+of every other at each size.
 
 **Adjusted first-order and OT indices.** Within each class of a factor the
 runs are reweighted by raking (iterative proportional fitting) so that the
@@ -296,7 +298,7 @@ independent points, a check of the adjusted estimates. The nearest-neighbour
 estimator of Broto, Bachoc and Depecker (2020), screening with the dummy and
 recomputed on the retained players, is kept as a check only: at 2,048 runs its
 errors reach 0.27 (an effect of 1.13 for X13 on Y6, the appliance group
-understated by up to 0.17), since seven of the fourteen players are discrete
+understated by up to 0.17), since seven of the fifteen players (the dummy included) are discrete
 and their ties leave the choice of neighbours to the order of the runs.
 
 **Screening and convergence.** An index reads as non-zero when the 2.5th
@@ -306,4 +308,11 @@ class-based indices are the percentile intervals shifted by the bootstrap
 bias. Convergence is judged by the statistics of Sarrazin, Pianosi and
 Wagener (2016) on the nested designs (`convergence_indices.csv`,
 `convergence_knn.csv`; criteria in `gsa/convergence.py`) and by the change of
-the surrogate's Shapley effects from 512 to 1,024 runs.
+the surrogate's Shapley effects between the two largest sizes. The stability
+table of `gsa/tables.py` follows the screening at 0.05 and the ranking over
+the last two doublings: the indices that cross 0.05 either way, and the
+outputs whose order above 0.05, top two and top five are kept. At 4,096 runs
+the first-order indices meet all four criteria for every output, and the OT
+indices miss only the change criterion for Y9 and Y10, through the index of
+the seed X8, which is mostly the bias of the estimator (0.03, 0.02 and 0.01 at
+1,024, 2,048 and 4,096 runs).
