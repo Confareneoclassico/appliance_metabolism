@@ -103,3 +103,15 @@ def test_surrogate_on_a_known_model():
     assert np.isclose(sh["X19"], (1 / 3) / (1 / 3 + 1 / 4), atol=0.06)
     assert np.isclose(sh["X13"], (1 / 4) / (1 / 3 + 1 / 4), atol=0.06)
     assert abs(sh["D_cont"]) < 0.02
+
+
+def test_stability_counts_crossings_and_order():
+    from gsa.tables import stability_counts
+    a = pd.Series({"X1": 0.30, "X2": 0.10, "X3": 0.04, "X4": 0.06, "X5": 0.01, "X6": 0.0})
+    b = pd.Series({"X1": 0.31, "X2": 0.05, "X3": 0.06, "X4": 0.04, "X5": 0.02, "X6": 0.0})
+    up, down, kept, top2, top5 = stability_counts(a, b)
+    assert (up, down) == (1, 1)          # X3 rises to 0.05, X4 falls below it
+    assert kept                          # X1 ahead of X2 at both sizes
+    assert not top2 and not top5         # X3 overtakes X2
+    same = stability_counts(a, a * 1.01)
+    assert same == (0, 0, True, True, True)

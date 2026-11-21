@@ -11,9 +11,12 @@ factors of the output, quantile classes never number a power of two, and
 the Shapley effects come from a gradient-boosting surrogate evaluated on
 independent points, with the nearest-neighbour estimator kept as a check. An
 index counts as non-zero only above zero as well as above its dummy. The
-analysis takes every nested design up to the runs present (2,048 in the
+analysis takes every nested design up to the runs present (4,096 in the
 sample of 21 November), where the columns are close to balanced and the raw
-indices agree with the adjusted ones of 1,024 runs.
+indices agree with the adjusted ones of 1,024 runs. A stability table follows
+the screening at 0.05 and the ranking over the last two doublings, the
+adjustment table and figure compare 1,024 runs with the largest sizes, and
+the kNN table compares the two estimators at the same size.
 
 The console follows the publication rules as the exports do (`docs/PIPELINE.md`
 Section 3.18). Stage 10 pools the largest numbers of diarists into one class
