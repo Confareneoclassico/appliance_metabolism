@@ -24,7 +24,16 @@ first-order index, Shapley effect and total index of the surrogate for every
 factor, the appliance powers one by one. `gsa.reseed` reruns points of the
 sample with the seeds redrawn, and the analysis turns the pairs of runs into
 the total index of the seeds on the model and a variance budget of every
-output (factors, seeds, error of the surrogate).
+output (factors, seeds, error of the surrogate). The first-order and OT
+indices are now the plain class-based estimators by default (`--adjusted`
+restores the raking, which at 4,096 runs moves no first-order index by more
+than 0.006). Part `totals` gives the first-order and total indices of the
+surrogate on every nested size, with bootstrap intervals, screening and
+convergence statistics at the largest, and the figures and tables lead with
+the total indices (`fig_totals`, `tab_totals`, `tab_convergence_totals`, the
+stability table and the convergence figure). The reruns also say which
+factors modulate the effect of the seeds (`seed_dispersion.csv`,
+`seed_modulators.csv`, `tab_seeds`).
 
 The console follows the publication rules as the exports do (`docs/PIPELINE.md`
 Section 3.18). Stage 10 pools the largest numbers of diarists into one class
