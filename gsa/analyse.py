@@ -345,6 +345,15 @@ def boot_adjusted_indices(X, Y, B, seed, drivers=None):
     return raw, (S, O), G, reps, drivers
 
 
+def boot_plain_indices(X, Y, B, seed):
+    """Plain class-based indices (every run of a class weighted alike) with B
+    bootstrap resamples, in the form of boot_adjusted_indices: the point
+    estimates serve as both the raw and the reported ones, and no imbalance
+    is left to report (NaN)."""
+    raw, reps = boot_class_indices(X, Y, B, seed)
+    return raw, raw, np.full(raw[0].shape, np.nan), reps, leading_drivers(raw[0])
+
+
 def savage_scores(x):
     """Savage scores of the values x ranked from the largest: sum_{k=r}^n 1/k
     for rank r, ties given the mean score of their ranks."""
@@ -541,13 +550,22 @@ def location_ot(S):
     return (S + (1 - np.sqrt(1 - S)) ** 2) / 2
 
 
-def ot_parts(X, Y, drivers=None):
-    """The adjusted first-order and OT indices of every factor on the full
-    sample, with the mean, spread and shape parts of the OT index and its
-    value for a pure shift of a Gaussian output (location_ot)."""
-    if drivers is None:
-        drivers = leading_drivers(class_indices(X, Y)[0])
-    S, O, _, P = adjusted_indices(X, Y, drivers, parts=True)
+def ot_parts(X, Y, drivers=None, adjusted=False):
+    """The first-order and OT indices of every factor on the full sample
+    (plain, or adjusted), with the mean, spread and shape parts of the OT
+    index and its value for a pure shift of a Gaussian output
+    (location_ot)."""
+    if adjusted:
+        if drivers is None:
+            drivers = leading_drivers(class_indices(X, Y)[0])
+        S, O, _, P = adjusted_indices(X, Y, drivers, parts=True)
+    else:
+        cls, K, off = column_classes(X)
+        W = np.ones(X.shape)
+        S, O, P = np.zeros((X.shape[1], Y.shape[1])), np.zeros((X.shape[1], Y.shape[1])), \
+            np.zeros((3, X.shape[1], Y.shape[1]))
+        for o in range(Y.shape[1]):
+            S[:, o], O[:, o], P[:, :, o] = indices_one_output(cls, K, off, W, Y[:, o], parts=True)
     rows = []
     for o, y in enumerate(OUTPUTS):
         for c in FACTOR_IDS:
@@ -625,6 +643,63 @@ def surrogate_brackets(table, Y, n_perm=100000, batches=10, n_pf=2 ** 16, seed=0
     return pd.DataFrame(rows)
 
 
+def surrogate_totals(table, Y, sizes, B=50, n_pf=2 ** 15, n_pf_boot=2 ** 14, seed=0, outputs=OUTPUTS):
+    """First-order and total indices of the surrogate of surrogate_indices on
+    every nested size, as shares of Var Y of the runs: every feature one by
+    one (the six powers and the continuous dummy included) and the six powers
+    as a group (closed indices), by pick_freeze on n_pf pairs of independent
+    points, the same for every size and output. On the largest size, B
+    bootstrap refits of the surrogate (runs resampled with replacement, the
+    first n_pf_boot pairs of points) give the intervals and, through the
+    dummy, the screening of read_out. Returns the table of indices and the
+    statistics of Sarrazin et al. (2016) for the total indices (on the
+    largest size) with the largest change of a total index from the size
+    before."""
+    sizes = [N for N in sizes if N <= len(table)]
+    X = table[SURROGATE_FEATURES].to_numpy(dtype=float)
+    pos = {c: i for i, c in enumerate(SURROGATE_FEATURES)}
+    groups = [(c, [pos[c]]) for c in SURROGATE_FEATURES] + \
+        [("P_appliances", [pos[c] for c in dict(SURROGATE_PLAYERS)["P_appliances"]])]
+    names = [g for g, _ in groups]
+    cols = [c for _, c in groups]
+    factors = [c for c in SURROGATE_FEATURES if c != "D_cont"]
+    dummy_of = {c: "D_cont" for c in factors + ["P_appliances"]}
+    f_idx = [names.index(c) for c in factors]
+    rng = np.random.default_rng(seed + 11)
+    A, Bm = independent_sample(n_pf, rng), independent_sample(n_pf, rng)
+    rows, conv, prev = [], [], {}
+    for N in sizes:
+        for o, y_name in enumerate(outputs):
+            y = Y[:N, o]
+            var_y = y.var()
+            model = make_surrogate(seed).fit(X[:N], y)
+            pf = pick_freeze(model.predict, A, Bm, cols) / var_y
+            explained = float(np.var(model.predict(A)) / var_y)
+            extra = [{} for _ in names]
+            stats = {}
+            if N == sizes[-1] and B:
+                reps = np.empty((2, B, len(names)))
+                brng = np.random.default_rng(seed + 100 + o)
+                for b in range(B):
+                    idx = brng.integers(0, N, N)
+                    mb = make_surrogate(seed).fit(X[:N][idx], y[idx])
+                    pfb = pick_freeze(mb.predict, A[:n_pf_boot], Bm[:n_pf_boot], cols) / y[idx].var()
+                    reps[0, b], reps[1, b] = pfb[:, 0], pfb[:, 2]
+                rT, stats = read_out(pf[:, 2], reps[1], names, factors, dummy_of)
+                rS, _ = read_out(pf[:, 0], reps[0], names, factors, dummy_of)
+                for i in range(len(names)):
+                    extra[i] = {k: rT[i][k] for k in ("lo", "hi", "lo_pct", "hi_pct", "boot_bias",
+                                                     "dummy_95", "nonzero")}
+                    extra[i].update({"S_lo": rS[i]["lo"], "S_hi": rS[i]["hi"], "S_nonzero": rS[i]["nonzero"]})
+            for i, name in enumerate(names):
+                rows.append({"N": N, "output": y_name, "player": name, "S": pf[i, 0], "S_se": pf[i, 1],
+                             "T": pf[i, 2], "T_se": pf[i, 3], "explained": explained, **extra[i]})
+            change = (float(np.max(np.abs(pf[f_idx, 2] - prev[o]))) if o in prev else np.nan)
+            prev[o] = pf[f_idx, 2]
+            conv.append({"output": y_name, "family": "T", "N": N, **stats, "max_change": change})
+    return pd.DataFrame(rows), pd.DataFrame(conv)
+
+
 def seed_totals(table, reseeded, B=1000, seed=0):
     """Total index of the redrawn seeds on every output by the estimator of
     Jansen (1999), T = mean((y_i - y'_i)^2) / (2 Var Y), over the points of
@@ -646,6 +721,44 @@ def seed_totals(table, reseeded, B=1000, seed=0):
         rows.append({"output": y, "T": T, "lo": float(lo), "hi": float(hi), "points": len(idx),
                      "changed": float(np.mean(d2 > 0))})
     return pd.DataFrame(rows)
+
+
+def seed_dispersion(table, reseeded, bands=None, factors=("X7", "X16", "X2", "X13", "X19"),
+                    n_perm=2000, seed=0):
+    """Which factors modulate the effect of the redrawn seeds. At every point
+    of `reseeded`, d = (y - y')^2 / 2 estimates without bias the variance that
+    the seeds leave there, so its mean over the points in a band of a factor,
+    over Var Y of all the runs of `table`, is the total index of the seeds
+    within that band (the bands average back to the total index). `bands`
+    maps a factor to its band edges. Also the rank correlation of d with each
+    of `factors` and its two-sided permutation p-value. Returns the bands and
+    the correlations as two tables."""
+    from scipy.stats import spearmanr
+    bands = bands or {"X7": (0.0, 0.1, 0.2, 0.3), "X16": (6, 8, 10, 12)}
+    base = table.set_index("run")
+    r = reseeded.set_index("run")
+    idx = r.index.intersection(base.index)
+    x = base.loc[idx]
+    rng = np.random.default_rng(seed)
+    rows, corr = [], []
+    for y in OUTPUTS:
+        var = table[y].astype(float).var(ddof=0)
+        d = (base.loc[idx, y].astype(float).to_numpy() - r.loc[idx, y].astype(float).to_numpy()) ** 2 / 2
+        if var <= 0 or not np.any(d > 0):
+            continue
+        for f, edges in bands.items():
+            v = x[f].astype(float).to_numpy()
+            for k, (lo, hi) in enumerate(zip(edges[:-1], edges[1:])):
+                m = (v >= lo) & ((v < hi) if k < len(edges) - 2 else (v <= hi))
+                rows.append({"output": y, "factor": f, "lo": lo, "hi": hi, "points": int(m.sum()),
+                             "T": float(d[m].mean() / var) if m.any() else np.nan})
+        for f in factors:
+            v = x[f].astype(float).to_numpy()
+            rho = float(spearmanr(v, d).statistic)
+            perm = np.array([spearmanr(v, rng.permutation(d)).statistic for _ in range(n_perm)])
+            corr.append({"output": y, "factor": f, "rho": rho,
+                         "p": float((np.sum(np.abs(perm) >= abs(rho)) + 1) / (n_perm + 1))})
+    return pd.DataFrame(rows), pd.DataFrame(corr)
 
 
 def variance_budget(brackets, seeds, kmeans=None):
@@ -720,10 +833,10 @@ def shape_bands(profiles):
     return np.percentile(shapes, [5, 50, 95], axis=0).astype(np.float32)
 
 
-def hourly_ot(table, profiles, B, seed):
-    """Adjusted OT and first-order indices of the factors and dummies for the
-    hourly means of the pooled profile, by day type, with the 95th percentile
-    of the matched dummies over B resamples."""
+def hourly_ot(table, profiles, B, seed, adjusted=False):
+    """OT and first-order indices (plain, or adjusted) of the factors and
+    dummies for the hourly means of the pooled profile, by day type, with the
+    95th percentile of the matched dummies over B resamples."""
     from gsa.benchmarks import CLOCK_HOUR
     X = table[COLUMNS].to_numpy(dtype=float)
     dummy_of = {c: matched_dummy(c) for c in FACTOR_IDS}
@@ -731,7 +844,8 @@ def hourly_ot(table, profiles, B, seed):
     for d, day in enumerate(["working", "non_working", "all"]):
         prof = profiles[:, -1, d, :]                                      # ALL countries
         H = np.column_stack([prof[:, CLOCK_HOUR == h].mean(axis=1) for h in range(24)])
-        raw, (S, O), G, reps, _ = boot_adjusted_indices(X, H, B, seed + d)
+        boot = boot_adjusted_indices if adjusted else boot_plain_indices
+        raw, (S, O), G, reps, _ = boot(X, H, B, seed + d)
         for j, c in enumerate(COLUMNS):
             dj = COLUMNS.index(dummy_of.get(c, c))
             for h in range(24):
@@ -743,7 +857,7 @@ def hourly_ot(table, profiles, B, seed):
 
 
 PARTS = ("summary", "dependence", "indices", "knn", "surrogate", "profiles", "uniform", "otparts",
-         "brackets", "seeds")
+         "brackets", "seeds", "totals")
 
 
 def load(share):
@@ -760,15 +874,20 @@ def part_dependence(table, X, out, sizes):
     pd.concat(frames).to_csv(out / "design_dependence.csv", index=False)
 
 
-def part_indices(X, Y, out, sizes, B, log):
-    """Adjusted first-order and OT indices on the nested designs, the raw ones
-    beside them, and the statistics of Sarrazin et al. (2016)."""
+def part_indices(X, Y, out, sizes, B, log, adjusted=False):
+    """First-order and OT indices on the nested designs, with the statistics
+    of Sarrazin et al. (2016): the plain class-based estimators, or with
+    adjusted=True those reweighted by raking on the leading drivers (the raw
+    ones beside them)."""
     dummy_of = {c: matched_dummy(c) for c in FACTOR_IDS}
     f_idx = [COLUMNS.index(c) for c in FACTOR_IDS]
     rows, conv, prev = [], [], {}
     for N in sizes:
         t0 = time.time()
-        raw, adj, G, reps, drivers = boot_adjusted_indices(X[:N], Y[:N], B, seed=N)
+        if adjusted:
+            raw, adj, G, reps, drivers = boot_adjusted_indices(X[:N], Y[:N], B, seed=N)
+        else:
+            raw, adj, G, reps, drivers = boot_plain_indices(X[:N], Y[:N], B, seed=N)
         for k, (fam, point, rep) in enumerate((("S", adj[0], reps[0]), ("OT", adj[1], reps[1]))):
             for o, y in enumerate(OUTPUTS):
                 r, st = read_out(point[:, o], rep[:, :, o], COLUMNS, FACTOR_IDS, dummy_of)
@@ -780,7 +899,8 @@ def part_indices(X, Y, out, sizes, B, log):
                           if (fam, o) in prev else np.nan)
                 prev[(fam, o)] = point[f_idx, o]
                 conv.append({"output": y, "family": fam, "N": N, **st, "max_change": change})
-        log(f"  adjusted class-based indices, {N} runs: {time.time() - t0:.0f} s")
+        log(f"  {'adjusted' if adjusted else 'plain'} class-based indices, {N} runs: "
+            f"{time.time() - t0:.0f} s")
     pd.DataFrame(rows).to_csv(out / "indices.csv", index=False)
     pd.DataFrame(conv).to_csv(out / "convergence_indices.csv", index=False)
 
@@ -859,12 +979,12 @@ def save_bands(out, profiles, z):
                         countries=z["countries"], day_types=z["day_types"])
 
 
-def part_profiles(share, table, out, N, B, log):
+def part_profiles(share, table, out, N, B, log, adjusted=False):
     z = np.load(Path(share) / "gsa_profiles.npz")
     order = np.argsort(z["runs"])
     profiles = z["profiles"][order][:N].astype(np.float64)
     save_bands(out, profiles, z)
-    hourly_ot(table.iloc[:N], profiles, B, seed=7).to_csv(out / "hourly.csv", index=False)
+    hourly_ot(table.iloc[:N], profiles, B, seed=7, adjusted=adjusted).to_csv(out / "hourly.csv", index=False)
     log("  profiles: done")
 
 
@@ -915,6 +1035,16 @@ def part_seeds(table, reseed, out, log):
         log(f"  no reruns in {reseed}")
         return
     pd.concat(frames).to_csv(out / "seeds.csv", index=False)
+    disp, corr = [], []
+    for which in ("seeds", "kmeans"):
+        f = reseed / which / "gsa_outputs.csv"
+        if f.is_file():
+            d, c = seed_dispersion(table, pd.read_csv(f))
+            disp.append(d.assign(variant=which))
+            corr.append(c.assign(variant=which))
+    if disp:
+        pd.concat(disp).to_csv(out / "seed_dispersion.csv", index=False)
+        pd.concat(corr).to_csv(out / "seed_modulators.csv", index=False)
     if "same" in totals and totals["same"]["T"].abs().max() > 0:
         log("  WARNING: the reruns of variant same differ from the base runs")
     if (out / "brackets.csv").is_file() and "seeds" in totals:
@@ -923,7 +1053,7 @@ def part_seeds(table, reseed, out, log):
 
 
 def run_all(share, out, uniform=None, B=500, sizes=SIZES, n_perm=10000, B_surrogate=50,
-            parts=PARTS, log=print, reseed=None):
+            parts=PARTS, log=print, reseed=None, adjusted=False):
     share, out = Path(share), Path(out)
     out.mkdir(parents=True, exist_ok=True)
     table, X, Y = load(share)
@@ -936,17 +1066,23 @@ def run_all(share, out, uniform=None, B=500, sizes=SIZES, n_perm=10000, B_surrog
     if "dependence" in parts:
         part_dependence(table, X, out, sizes)
     if "indices" in parts:
-        part_indices(X, Y, out, sizes, B, log)
+        part_indices(X, Y, out, sizes, B, log, adjusted=adjusted)
     if "knn" in parts:
         part_knn(table, Y, out, sizes, B, log)
     if "surrogate" in parts:
         part_surrogate(table, Y, out, sizes, B_surrogate, n_perm, log)
     if "profiles" in parts and (share / "gsa_profiles.npz").is_file():
-        part_profiles(share, table, out, sizes[-1], min(B, 100), log)
+        part_profiles(share, table, out, sizes[-1], min(B, 100), log, adjusted=adjusted)
     if "uniform" in parts and uniform is not None:
         part_uniform(table, uniform, out, min(B, 200), n_perm, log)
     if "otparts" in parts:
-        ot_parts(X, Y).to_csv(out / "ot_parts.csv", index=False)
+        ot_parts(X, Y, adjusted=adjusted).to_csv(out / "ot_parts.csv", index=False)
+    if "totals" in parts:
+        t0 = time.time()
+        tot, conv = surrogate_totals(table, Y, sizes, B=B_surrogate)
+        tot.to_csv(out / "totals.csv", index=False)
+        conv.to_csv(out / "convergence_totals.csv", index=False)
+        log(f"  surrogate total indices: {time.time() - t0:.0f} s")
     if "brackets" in parts:
         t0 = time.time()
         surrogate_brackets(table, Y, n_perm=10 * n_perm).to_csv(out / "brackets.csv", index=False)
@@ -968,6 +1104,9 @@ def main(argv=None):
                         help="nested designs to analyse (those above the number of runs are skipped)")
     parser.add_argument("--n-perm", type=int, default=10000)
     parser.add_argument("--B-surrogate", type=int, default=50)
+    parser.add_argument("--adjusted", action="store_true",
+                        help="reweight the runs of each class by raking on the leading drivers (the "
+                             "plain class-based estimators otherwise)")
     parser.add_argument("--parts", default=",".join(PARTS),
                         help="comma-separated subset of " + ", ".join(PARTS))
     args = parser.parse_args(argv)
@@ -978,7 +1117,7 @@ def main(argv=None):
     t0 = time.time()
     run_all(args.share, args.out, args.uniform, B=args.B,
             sizes=tuple(int(s) for s in args.sizes.split(",")), n_perm=args.n_perm,
-            B_surrogate=args.B_surrogate, parts=parts, reseed=args.reseed)
+            B_surrogate=args.B_surrogate, parts=parts, reseed=args.reseed, adjusted=args.adjusted)
     print(f"Done in {time.time() - t0:.0f} s; results in {args.out}")
 
 

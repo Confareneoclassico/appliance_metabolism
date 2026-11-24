@@ -8,20 +8,20 @@ Draws, as PDF:
                        largest size, as shares of Var Y (blank where an effect
                        does not clear the dummy), and the share of Var Y the
                        surrogate does not reproduce
-  fig_indices.pdf      adjusted first-order and OT indices and the surrogate's
-                       Shapley effects with their 95% intervals, one panel per
-                       output, for the factors read as non-zero and of at least
-                       0.02 in some family
-  fig_adjustment.pdf   raw against adjusted first-order and OT indices of
-                       every factor and output at 1,024 runs and at the
-                       largest size: the raking moves only the indices that
-                       took on another factor's effect
-  fig_convergence.pdf  Shapley effects of the surrogate of the leading
-                       players against the number of runs (128 to 1,024)
+  fig_indices.pdf      first-order and OT indices and the surrogate's total
+                       indices (Shapley effects without totals.csv) with their
+                       95% intervals, one panel per output, for the factors
+                       read as non-zero and of at least 0.02 in some family
+  fig_adjustment.pdf   (only for adjusted indices) raw against adjusted
+                       first-order and OT indices at 1,024 runs and at the
+                       largest size
+  fig_convergence.pdf  total indices of the surrogate (Shapley effects
+                       without totals.csv) of the leading players against the
+                       number of runs
   fig_profiles.pdf     the pooled profile by day type and the hourly shapes of
                        Belgium and France against their measured benchmarks:
                        median and 5th to 95th percentile over the runs
-  fig_hourly.pdf       adjusted OT index of each factor on the hourly values of
+  fig_hourly.pdf       OT index of each factor on the hourly values of
                        the pooled profile (blank below the dummy)
   fig_drivers.pdf      outputs of the runs against their leading factors, with
                        the canonical value (needs --share, the folder of
@@ -29,13 +29,16 @@ Draws, as PDF:
   fig_distributions.pdf  the uncertainty analysis: the distribution of every
                        output over the runs, split by diarist coverage, with
                        the canonical value (needs --share)
-  fig_ot_s.pdf         adjusted OT index against first-order index of every
+  fig_ot_s.pdf         OT index against first-order index of every
                        factor and output, with the bound S/2 and the curve of
                        a pure shift of a Gaussian output (needs ot_parts.csv)
   fig_budget.pdf       variance budget of every output: factors (first-order
                        effects and interactions), seeds and the error of the
                        surrogate (needs budget.csv, from the reruns of
                        gsa.reseed)
+  fig_totals.pdf       total index of every factor (surrogate) with the
+                       first-order index below it, and the total index of the
+                       seeds from the reruns (needs totals.csv; seeds.csv)
   fig_brackets.pdf     first-order index, Shapley effect and total index of
                        the surrogate for the leading players of every output,
                        the appliance powers one by one, and the share of Var Y that the
@@ -66,9 +69,9 @@ from gsa import benchmarks  # noqa: E402
 TEXT, TEXT2, MUTED = "#0b0b0b", "#52514e", "#898781"
 GRID, AXIS, SURFACE = "#e1e0d9", "#c3c2b7", "#ffffff"
 BLUE, ORANGE, AQUA = "#2a78d6", "#eb6834", "#1baf7a"
-FAMILY = {"Shapley": BLUE, "S": ORANGE, "OT": AQUA}
-FAMILY_LABEL = {"Shapley": "Shapley effect (surrogate)", "S": "First-order index (adjusted)",
-                "OT": "OT index (adjusted)"}
+FAMILY = {"T": BLUE, "S": ORANGE, "OT": AQUA, "Shapley": "#e87ba4"}
+FAMILY_LABEL = {"T": "Total index (surrogate)", "S": "First-order index", "OT": "OT index",
+                "Shapley": "Shapley effect (surrogate)"}
 PLAYER_COLOUR = {"P_appliances": BLUE, "X13": ORANGE, "X19": AQUA}
 RAMP = ["#ffffff", "#cde2fb", "#b7d3f6", "#9ec5f4", "#86b6ef", "#6da7ec", "#5598e7", "#3987e5",
         "#2a78d6", "#256abf", "#1c5cab", "#184f95", "#104281", "#0d366b"]
@@ -164,24 +167,87 @@ def fig_effects(sur, out):
     plt.close(fig)
 
 
-def fig_indices(ind, sur, out):
+def fig_totals(tot, out, seeds=None, floor=0.02):
+    """Total index of every factor (rows: outputs, columns: factors whose
+    total index reaches `floor` and reads as non-zero on some output), from
+    the surrogate on the largest size, with the first-order index of the
+    surrogate below it; and, with seeds (seeds.csv of the reruns), the total
+    index of the K-means seed and of the draw of the country multipliers on
+    the model, after a gap."""
+    t = largest(tot)
+    t = t[(t.player != "D_cont") & (t.player != "P_appliances")]
+    keep = [p for p in ROW_ORDER if p != "P_appliances" and
+            ((t.player == p) & (t["T"] >= floor) & t.nonzero.map(is_true)).any()]
+    T = t.pivot(index="output", columns="player", values="T").reindex(index=OUTPUTS, columns=keep)
+    S = t.pivot(index="output", columns="player", values="S").reindex(index=OUTPUTS, columns=keep)
+    cols = [PLAYER_LABEL[p].strip() for p in keep]
+    vals, svals = T.to_numpy(dtype=float), S.to_numpy(dtype=float)
+    if seeds is not None:
+        sd = seeds.pivot(index="output", columns="variant", values="T").reindex(OUTPUTS)
+        km = sd["kmeans"].to_numpy(dtype=float)
+        mult = (sd["seeds"] - sd["kmeans"]).to_numpy(dtype=float)
+        vals = np.column_stack([vals, np.full(len(OUTPUTS), np.nan), km, mult])
+        svals = np.column_stack([svals, np.full((len(OUTPUTS), 3), np.nan)])
+        cols += ["", "K-means seed (X21)", "Draw of the multipliers (X8)"]
+    fig, ax = plt.subplots(figsize=(7.0, 4.4))
+    shown = np.where(np.isnan(vals), 0.0, np.clip(vals, 0, 1))
+    ax.imshow(shown, cmap=ramp(), vmin=0, vmax=1, aspect="auto")
+    for i in range(vals.shape[0]):
+        for j in range(vals.shape[1]):
+            if not np.isfinite(vals[i, j]) or vals[i, j] < 0.005:
+                continue
+            dark = vals[i, j] > 0.55
+            ax.text(j, i - 0.12, f"{vals[i, j]:.2f}", ha="center", va="center", fontsize=6,
+                    color="#ffffff" if dark else TEXT)
+            if np.isfinite(svals[i, j]):
+                ax.text(j, i + 0.24, f"{max(svals[i, j], 0):.2f}", ha="center", va="center", fontsize=4.8,
+                        color="#ffffff" if dark else TEXT2)
+    ax.set_xticks(range(vals.shape[1]))
+    ax.set_xticklabels(cols, rotation=35, ha="right", fontsize=6)
+    ax.set_yticks(range(vals.shape[0]))
+    ax.set_yticklabels([OUTPUT_LABEL[o] for o in OUTPUTS], fontsize=6.5)
+    ax.set_xticks(np.arange(-0.5, vals.shape[1], 1), minor=True)
+    ax.set_yticks(np.arange(-0.5, vals.shape[0], 1), minor=True)
+    ax.grid(which="minor", color=SURFACE, linewidth=1.5)
+    ax.tick_params(which="both", length=0)
+    for sp in ax.spines.values():
+        sp.set_visible(False)
+    fig.tight_layout()
+    fig.savefig(out / "fig_totals.pdf")
+    plt.close(fig)
+
+
+def fig_indices(ind, sur, out, tot=None):
+    """First-order, OT and total (or Shapley) indices with their 95% intervals
+    for the factors read as non-zero with an index of at least 0.02, one panel
+    per output. With tot (totals.csv) the third family is the total index of
+    the surrogate, with the powers one by one; otherwise the Shapley effect."""
     a = largest(ind)
-    s = largest(sur)
+    third = "T" if tot is not None else "Shapley"
+    if tot is not None:
+        s = largest(tot)
+        s = s[s.player != "D_cont"].rename(columns={"T": "value"})
+    else:
+        s = largest(sur)
+        s = s[s.shapley.notna()].rename(columns={"shapley": "value"})
     fig, axes = plt.subplots(4, 3, figsize=(7.0, 9.4))
     for ax, y in zip(axes.ravel(), OUTPUTS):
-        ay, sy = a[a.output == y], s[(s.output == y) & s.shapley.notna()]
+        ay, sy = a[a.output == y], s[s.output == y]
         nz = (set(ay[ay.nonzero.map(is_true) & (ay.point >= 0.02)].factor)
-              | set(sy[sy.nonzero.map(is_true) & (sy.shapley >= 0.02)].player))
-        rows = [p for p in ROW_ORDER if p in nz or (p == "P_appliances" and nz & set(APPLIANCES))]
+              | set(sy[sy.nonzero.map(is_true) & (sy.value >= 0.02)].player))
+        if third == "T":
+            rows = [p for p in ROW_ORDER if p in nz and p != "P_appliances"]
+        else:
+            rows = [p for p in ROW_ORDER if p in nz or (p == "P_appliances" and nz & set(APPLIANCES))]
         ypos = np.arange(len(rows))[::-1]
-        for fam, dy in (("S", 0.24), ("OT", 0.0), ("Shapley", -0.24)):
+        for fam, dy in (("S", 0.24), ("OT", 0.0), (third, -0.24)):
             for yp, p in zip(ypos, rows):
-                if fam == "Shapley":
+                if fam == third:
                     r = sy[sy.player == p]
                     if r.empty:
                         continue
                     r = r.iloc[0]
-                    pt, lo, hi = r.shapley, r.lo, r.hi
+                    pt, lo, hi = r.value, r.lo, r.hi
                 else:
                     r = ay[(ay.family == fam) & (ay.factor == p)]
                     if r.empty:
@@ -202,7 +268,7 @@ def fig_indices(ind, sur, out):
         ax.set_xticklabels(["0", "0.25", "0.5", "0.75", "1"])
         ax.tick_params(axis="y", length=0)
     handles = [plt.Line2D([], [], color=FAMILY[f], marker="o", markersize=3.2, linewidth=1.0,
-                          label=FAMILY_LABEL[f]) for f in ("S", "OT", "Shapley")]
+                          label=FAMILY_LABEL[f]) for f in ("S", "OT", third)]
     fig.legend(handles=handles, loc="lower center", ncol=3, bbox_to_anchor=(0.5, 0.0))
     fig.tight_layout(rect=(0, 0.022, 1, 1))
     fig.savefig(out / "fig_indices.pdf")
@@ -239,23 +305,29 @@ def fig_adjustment(ind, out):
     plt.close(fig)
 
 
-def fig_convergence(sur, out):
-    s = sur[sur.shapley.notna() & (sur.player != "D_cont")]
+def fig_convergence(sur, out, tot=None):
+    """The three leading players of every output against the number of runs,
+    with the 95% interval at the largest size: total indices of the surrogate
+    (factors one by one) when tot is given, Shapley effects otherwise."""
+    if tot is not None:
+        s = tot[(tot.player != "D_cont") & (tot.player != "P_appliances")].rename(columns={"T": "value"})
+    else:
+        s = sur[sur.shapley.notna() & (sur.player != "D_cont")].rename(columns={"shapley": "value"})
     N = s.N.max()
     fig, axes = plt.subplots(4, 3, figsize=(7.0, 8.2), sharex=True)
     for ax, y in zip(axes.ravel(), OUTPUTS):
         a = s[s.output == y]
-        top = a[a.N == N].sort_values("shapley", ascending=False).player.head(3).tolist()
+        top = a[a.N == N].sort_values("value", ascending=False).player.head(3).tolist()
         labels = []
         for p in top:
             r = a[a.player == p].sort_values("N")
-            c = PLAYER_COLOUR.get(p, MUTED)
-            ax.plot(r.N, r.shapley, color=c, marker="o", markersize=3, markeredgecolor=SURFACE,
+            c = family_colour(p) if tot is not None else PLAYER_COLOUR.get(p, MUTED)
+            ax.plot(r.N, r.value, color=c, marker="o", markersize=3, markeredgecolor=SURFACE,
                     markeredgewidth=0.6)
             last = r[r.N == N].iloc[0]
             if np.isfinite(last.lo):
                 ax.plot([N, N], [last.lo, last.hi], color=c, linewidth=1.0)
-            labels.append([last.shapley, PLAYER_LABEL[p].strip().split(" (")[0]])
+            labels.append([last.value, PLAYER_LABEL[p].strip().split(" (")[0]])
         # direct labels, pushed apart where the effects are close
         labels.sort()
         for i in range(1, len(labels)):
@@ -345,7 +417,8 @@ def fig_hourly(hourly, out, day="all"):
     for sp in ax.spines.values():
         sp.set_visible(False)
     cb = fig.colorbar(im, ax=ax, fraction=0.03, pad=0.02)
-    cb.set_label("OT index, adjusted (blank below the dummy or 0.02)", color=TEXT2)
+    adj = ", adjusted" if "imbalance" in h.columns and h.imbalance.notna().any() else ""
+    cb.set_label(f"OT index{adj} (blank below the dummy or 0.02)", color=TEXT2)
     cb.outline.set_visible(False)
     fig.tight_layout()
     fig.savefig(out / "fig_hourly.pdf")
@@ -500,7 +573,7 @@ def fig_distributions(table, summary, out):
 
 
 def fig_ot_s(otp, out, excess=0.04):
-    """OT index against first-order index (adjusted) of every factor and
+    """OT index against first-order index of every factor and
     output, with the lower bound S/2 and the OT index of a factor that only
     shifts a Gaussian output. Points more than `excess` above that curve, the
     factors that change the spread or shape of the output, are named."""
@@ -531,10 +604,10 @@ def fig_ot_s(otp, out, excess=0.04):
                                             shrinkA=0, shrinkB=2) if abs(y - r.OT) > 1e-9 else None)
         ax.set_xlim(0, xmax)
         ax.set_ylim(0, ymax)
-        ax.set_xlabel("First-order index S, adjusted")
+        ax.set_xlabel("First-order index S")
         ax.grid(True)
         ax.set_axisbelow(True)
-    axes[0].set_ylabel("OT index, adjusted")
+    axes[0].set_ylabel("OT index")
     axes[0].set_title("All factors and outputs", loc="left")
     axes[1].set_title("Detail", loc="left")
     handles = [plt.Line2D([], [], color=c, marker="o", linestyle="", markersize=4)
@@ -592,7 +665,7 @@ def fig_budget(budget, out):
     YELLOW, MAGENTA = "#eda100", "#e87ba4"
     parts = [("first_order", "First-order effects", BLUE), ("interactions", "Interactions", AQUA)]
     if "kmeans" in budget.columns:
-        parts += [("kmeans", "K-means seed", YELLOW), ("multipliers", "Country multipliers", MAGENTA)]
+        parts += [("kmeans", "K-means seed", YELLOW), ("multipliers", "Draw of the multipliers (X8)", MAGENTA)]
     else:
         parts += [("seeds", "Seeds", YELLOW)]
     parts += [("error", "Not reproduced by the surrogate", MUTED)]
@@ -643,11 +716,17 @@ def main(argv=None):
     if (r / "budget.csv").is_file():
         fig_budget(pd.read_csv(r / "budget.csv"), args.out)
     ind = pd.read_csv(r / "indices.csv")
-    sur = pd.read_csv(r / "surrogate.csv")
-    fig_effects(sur, args.out)
-    fig_indices(ind, sur, args.out)
-    fig_adjustment(ind, args.out)
-    fig_convergence(sur, args.out)
+    sur = pd.read_csv(r / "surrogate.csv") if (r / "surrogate.csv").is_file() else None
+    tot = pd.read_csv(r / "totals.csv") if (r / "totals.csv").is_file() else None
+    seeds = pd.read_csv(r / "seeds.csv") if (r / "seeds.csv").is_file() else None
+    if sur is not None:
+        fig_effects(sur, args.out)
+    if tot is not None:
+        fig_totals(tot, args.out, seeds)
+    fig_indices(ind, sur, args.out, tot)
+    if ind.imbalance.notna().any():
+        fig_adjustment(ind, args.out)
+    fig_convergence(sur, args.out, tot)
     if (r / "profile_bands.npz").is_file():
         fig_profiles(r / "profile_bands.npz", args.out)
     if (r / "hourly.csv").is_file():

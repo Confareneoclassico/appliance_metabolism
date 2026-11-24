@@ -267,15 +267,17 @@ which the analysis then shows.
 
 ```bash
 python3 -m gsa.analyse --share ~/hetus_gsa/share --uniform ~/hetus_gsa/share_uniform \
-    --out ~/hetus_gsa/results
-python3 -m gsa.figures --results ~/hetus_gsa/results --out ~/hetus_gsa/figures
+    --reseed ~/hetus_gsa/reseed_share --out ~/hetus_gsa/results
+python3 -m gsa.figures --results ~/hetus_gsa/results --out ~/hetus_gsa/figures \
+    --share ~/hetus_gsa/share
 python3 -m gsa.tables --results ~/hetus_gsa/results --out ~/hetus_gsa/tables
 ```
 
 `--parts` runs a subset (summary, dependence, indices, knn, surrogate,
-profiles, uniform), so that two processes can share the work; with one thread
-each (`OMP_NUM_THREADS=1`) the whole analysis takes about an hour on two
-cores.
+profiles, uniform, otparts, brackets, totals, seeds), so that two processes
+can share the work; with one thread each (`OMP_NUM_THREADS=1`) the whole
+analysis takes about two hours on two cores, most of it in brackets and
+totals.
 
 **Dependence between the columns.** The given-data estimators read the effect
 of a factor from the runs in each of its classes, which is right only if each
@@ -295,18 +297,18 @@ At 2,048 and 4,096 runs the raw indices agree with the adjusted ones of 1,024
 runs. `design_dependence.csv` gives the index of every column on the classes
 of every other at each size.
 
-**Adjusted first-order and OT indices.** Within each class of a factor the
-runs are reweighted by raking (iterative proportional fitting) so that the
+**First-order and OT indices.** Both are computed from the runs by classes:
+one class per level of a discrete factor and min(25, floor(sqrt n)) quantile
+classes of a continuous one, one fewer when that is a power of two, so that
+the classes never coincide with the dyadic intervals; the OT index uses the
+exact one-dimensional W2. With `--adjusted`, the runs within each class of a
+factor are reweighted by raking (iterative proportional fitting) so that the
 class holds the classes of the three factors with the largest raw first-order
-index on the output (the factor under study set aside; levels, or four
-quantile classes) in the shares of the whole sample, and the class mean and
-the exact W2 between the weighted class and the whole sample (from the
-integral of the quantile function) are taken with these weights. Where a
-driver class is missing from a class, it cannot be restored; the imbalance
-left is reported. The dummies are adjusted alike. Quantile classes number
-min(25, floor(sqrt n)), one fewer when that is a power of two, so that they
-never coincide with the dyadic intervals. `indices.csv` gives both the
-adjusted and the raw estimates.
+index (levels, or four quantile classes) in the shares of the whole sample,
+the dummies alike, and `indices.csv` gives both the adjusted and the raw
+estimates. At 4,096 runs the adjustment moves no first-order index by more
+than 0.006 and no OT index by more than 0.019, so the plain estimators are the
+default and the ones reported.
 
 **Shapley effects.** A gradient-boosting surrogate of each output on the
 factors other than the seeds and on the continuous dummy is fitted to the
@@ -316,12 +318,26 @@ independent points, where the dependence of the sample plays no part; they
 are given as shares of Var Y, so that they add up to the share the surrogate
 reproduces. Intervals come from 50 bootstrap refits of the surrogate at the
 largest size. The surrogate also gives first-order and OT indices on 16,384
-independent points, a check of the adjusted estimates. The nearest-neighbour
+independent points, a check of the class-based estimates. The nearest-neighbour
 estimator of Broto, Bachoc and Depecker (2020), screening with the dummy and
 recomputed on the retained players, is kept as a check only: at 2,048 runs its
 errors reach 0.27 (an effect of 1.13 for X13 on Y6, the appliance group
 understated by up to 0.17), since seven of the fifteen players (the dummy included) are discrete
 and their ties leave the choice of neighbours to the order of the runs.
+
+**Total indices.** Part `totals` fits the same surrogate on every nested
+size and computes the first-order and total indices of each factor (the six
+powers one by one and as a group, closed indices) by the pick-freeze
+estimators of Saltelli et al. (2010) and Jansen (1999) on 2^15 pairs of
+independent points, the same for every size, as shares of Var Y of the runs.
+At the largest size, 50 bootstrap refits of the surrogate (runs resampled with
+replacement, 2^14 pairs each) give the intervals and the screening against the
+continuous dummy, and `convergence_totals.csv` holds the statistics of
+Sarrazin et al. (2016) for the total indices with the largest change of a
+total index from the size before (`totals.csv`; about 35 minutes on two
+cores). The total index of a factor on the surrogate holds every term of the
+factor without a seed; its interactions with the seeds are counted with the
+seeds (below).
 
 **Screening and convergence.** An index reads as non-zero when the 2.5th
 percentile of its bootstrap resamples lies above the 95th percentile of the
@@ -372,4 +388,12 @@ seed and the country multipliers (reruns), and the error of the surrogate by
 difference (`budget.csv`, `fig_budget.pdf`, `tab_budget.tex`). The variant
 `same` checks that the model is deterministic, and the outputs that no
 clustering enters (Y3, Y4, Y7, Y9, Y10, Y11) do not move when only the
-K-means seed is redrawn.
+K-means seed is redrawn. Which factors modulate the effect of the seeds
+follows from the same reruns: (y - y')^2 / 2 estimates without bias the
+variance that the seeds leave at a point, so its mean within a band of a
+factor, over Var Y, is the total index of the seeds within that band
+(`seed_dispersion.csv`, bands of the spread X7 and of K), and its rank
+correlation with a factor, with a permutation p-value, ranks the modulators
+(`seed_modulators.csv`). This is the dispersion part of the joint modelling of
+stochastic models of Marrel et al. (2012). `tab_seeds.tex` gives the seeds'
+total indices and the bands of X7.

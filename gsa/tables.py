@@ -10,10 +10,10 @@ Writes one .tex file per table (booktabs, caption above the table):
                        nested size: pairs above 0.1 and the largest pairs
   tab_indices.tex      for every output, the players read as non-zero: the
                        surrogate's Shapley effect with its interval and the
-                       adjusted first-order and OT indices (longtable)
-  tab_convergence.tex  statistics of Sarrazin et al. (2016) for the adjusted
-                       indices at the largest size, and the largest change of
-                       a Shapley effect of the surrogate between them
+                       first-order and OT indices (longtable)
+  tab_convergence.tex  statistics of Sarrazin et al. (2016) for the first-order
+                       and OT indices at the largest size, and the largest
+                       change of a Shapley effect of the surrogate
   tab_uniform.tex      the 256 runs with powers uniform in W against the same
                        points with log-uniform powers
   tab_knn.tex          nearest-neighbour against surrogate Shapley effects
@@ -27,6 +27,14 @@ Writes one .tex file per table (booktabs, caption above the table):
   tab_ot_excess.tex    the factors whose OT index exceeds that of a pure shift
                        of a Gaussian output, with the parts of the index
   tab_budget.tex       variance budget of every output (needs budget.csv)
+  tab_totals.tex       total index of the surrogate with its interval and the
+                       first-order and OT indices of the runs, and the seeds
+                       from the reruns (longtable; needs totals.csv)
+  tab_convergence_totals.tex  convergence statistics for the first-order, OT
+                       and total indices (needs convergence_totals.csv)
+  tab_seeds.tex        total indices of the seeds from the reruns, and of the
+                       draw of the multipliers by their spread (needs seeds.csv
+                       and seed_dispersion.csv)
   tab_brackets.tex     first-order index, Shapley effect and total index of
                        the surrogate, the appliance powers one by one and as a
                        group (longtable)
@@ -154,10 +162,132 @@ def table_indices(results):
         body += "\\addlinespace\n"
     return wrap(body, f"Indices at {N:,} runs for the players read as non-zero in at least one family: "
                 "Shapley effects of the surrogate as shares of Var $Y$ with the 2.5th and 97.5th "
-                "percentiles of 50 bootstrap refits, and the adjusted first-order ($S_i$) and OT "
+                "percentiles of 50 bootstrap refits, and the first-order ($S_i$) and OT "
                 "($\\iota_i$) indices. $^{\\circ}$: not read as non-zero in that family. The group of "
                 "the appliance powers has a Shapley effect only, its factors first-order and OT "
                 "indices only.", "tab:indices", "lrrrr", long=True)
+
+
+def table_convergence_totals(results):
+    """Sarrazin statistics at the largest size for the first-order and OT
+    indices (given data) and the total indices of the surrogate."""
+    c = pd.read_csv(results / "convergence_indices.csv")
+    t = pd.read_csv(results / "convergence_totals.csv")
+    N = c.N.max()
+    prev_n = sorted(c.N.unique())[-2]
+    fams = [("S", c), ("OT", c), ("T", t)]
+    head = " & ".join(f"\\multicolumn{{4}}{{c}}{{{lab}}}" for lab in
+                      ("First-order index $S_i$", "OT index $\\iota_i$", "Total index $T_i$ (surrogate)"))
+    body = (f"\\toprule\n & {head} \\\\\n\\cmidrule(lr){{2-5}}\\cmidrule(lr){{6-9}}\\cmidrule(lr){{10-13}}\n"
+            "Output" + " & Rank. & Screen. & Indices & Change" * 3 + " \\\\\n\\midrule\n")
+    for y in OUTPUTS:
+        cells = []
+        for fam, d in fams:
+            r = d[(d.output == y) & (d.family == fam) & (d.N == N)].iloc[0]
+            for k in ("ranking", "screening", "indices", "max_change"):
+                v = r[k]
+                ok = np.isfinite(v) and v < CRITERIA[k]
+                cells.append(num(v, 3) + ("" if ok else "$^{*}$"))
+        body += f"{y} & " + " & ".join(cells) + " \\\\\n"
+    body += "\\bottomrule\n"
+    return wrap(body, f"Convergence at {N:,} runs. Ranking is the 95th percentile of the adjusted rank "
+                "difference over the bootstrap resamples (criterion below 1). Screening and indices are "
+                "the widest 95\\% intervals among the factors read as zero and as non-zero (below 0.05). "
+                f"Change is the largest change of an index from {prev_n:,} to {N:,} runs (below 0.02). "
+                "First-order and OT indices from 500 resamples of the runs, total indices from 50 refits of "
+                "the surrogate. $^{*}$: criterion not met.", "tab:convergence", "l" + "rrrr" * 3,
+                size="\\footnotesize", fit=True)
+
+
+def table_totals(results, floor=0.01):
+    """The indices at the largest size: total index of the surrogate with
+    its interval, the first-order and OT indices of the runs, for the factors
+    read as non-zero in some family (the total index also at least `floor`),
+    and the total index of the seeds from the reruns."""
+    ind = pd.read_csv(results / "indices.csv")
+    tot = pd.read_csv(results / "totals.csv")
+    seeds = pd.read_csv(results / "seeds.csv") if (results / "seeds.csv").is_file() else None
+    N = ind.N.max()
+    ind, tot = ind[ind.N == N], tot[tot.N == tot.N.max()]
+    cols = "Output and factor & $T_i$ & 95\\% interval & $S_i$ & $\\iota_i$"
+    head = (f"\\toprule\n{cols} \\\\\n\\midrule\n\\endfirsthead\n\\toprule\n{cols} \\\\\n\\midrule\n"
+            "\\endhead\n\\bottomrule\n\\endfoot\n")
+    body = head
+    for y in OUTPUTS:
+        a = ind[ind.output == y]
+        t = tot[(tot.output == y) & (tot.player != "D_cont")].set_index("player")
+        body += (f"\\multicolumn{{5}}{{l}}{{{OUTPUT_LABEL[y]}}} \\\\\n"
+                 f"\\multicolumn{{5}}{{l}}{{\\quad surrogate reproduces {t.explained.iloc[0]:.2f} of the "
+                 "variance} \\\\\n")
+        nz_s = set(a[(a.family == "S") & a.nonzero.map(is_true)].factor)
+        nz_o = set(a[(a.family == "OT") & a.nonzero.map(is_true)].factor)
+        nz_t = set(t[t.nonzero.map(is_true) & (t["T"] >= floor)].index) - {"P_appliances"}
+        rows = [p for p in ROW_ORDER if p in nz_t or p in nz_s or p in nz_o]
+        for p in rows:
+            def get(fam):
+                r = a[(a.family == fam) & (a.factor == p)]
+                if r.empty:
+                    return "--"
+                return num(r.iloc[0].point) + ("" if p in (nz_s if fam == "S" else nz_o) else "$^{\\circ}$")
+            if p in t.index:
+                r = t.loc[p]
+                tv = num(r["T"]) + ("" if p in nz_t else "$^{\\circ}$")
+                ci = f"{num(r.lo)} to {num(r.hi)}"
+            else:
+                tv, ci = "--", "--"
+            body += f"\\quad {label(p)} & {tv} & {ci} & {get('S')} & {get('OT')} \\\\\n"
+        if seeds is not None:
+            sd = seeds[seeds.output == y].set_index("variant")
+            km, both = sd.loc["kmeans"], sd.loc["seeds"]
+            km_ci = f"{num(km.lo)} to {num(km.hi)}" if km["T"] > 0 else "--"
+            body += (f"\\quad K-means seed (X21), reruns & {num(km['T'])} & {km_ci} & -- & -- "
+                     "\\\\\n"
+                     f"\\quad Seeds together, reruns & {num(both['T'])} & {num(both.lo)} to {num(both.hi)} & -- & -- "
+                     "\\\\\n")
+        body += "\\addlinespace\n"
+    return wrap(body, f"Indices at {N:,} runs for the factors read as non-zero in at least one family: total "
+                "index $T_i$ of the surrogate as a share of Var $Y$, with the 95\\% interval of 50 bootstrap "
+                "refits, and the first-order ($S_i$) and OT ($\\iota_i$) indices computed from the runs. "
+                "$^{\\circ}$: not read as non-zero in that family. The seeds: total index on the model from "
+                "the reruns of 256 points with the seeds redrawn, with a bootstrap interval over the points.",
+                "tab:totals", "lrrrr", long=True)
+
+
+def table_seeds(results):
+    """Total indices of the seeds on the model from the reruns of gsa.reseed
+    (seeds.csv), and the total index of the draw of the country multipliers
+    (both seeds less the seed of K-means) within the bands of their spread X7
+    (seed_dispersion.csv)."""
+    sd = pd.read_csv(results / "seeds.csv")
+    disp = pd.read_csv(results / "seed_dispersion.csv")
+    t = {v: sd[sd.variant == v].set_index("output") for v in ("kmeans", "seeds")}
+    bands = disp[disp.factor == "X7"]
+    edges = sorted(set(zip(bands.lo, bands.hi)))
+    head = " & ".join(f"{lo:.1f} to {hi:.1f}" for lo, hi in edges)
+    body = ("\\toprule\n & \\multicolumn{2}{c}{Seed of K-means (X21)} & \\multicolumn{2}{c}{Both seeds} & "
+            f"Draw of the & \\multicolumn{{{len(edges)}}}{{c}}{{Both seeds, by spread X7}} \\\\\n"
+            "\\cmidrule(lr){2-3}\\cmidrule(lr){4-5}"
+            f"\\cmidrule(lr){{7-{6 + len(edges)}}}\n"
+            f"Output & $T$ & 95\\% interval & $T$ & 95\\% interval & multipliers (X8) & {head} \\\\\n\\midrule\n")
+    for y in OUTPUTS:
+        k, b = t["kmeans"].loc[y], t["seeds"].loc[y]
+        cells = [num(k["T"]), f"{num(k.lo)} to {num(k.hi)}" if k["T"] > 0 else "--",
+                 num(b["T"]), f"{num(b.lo)} to {num(b.hi)}", num(b["T"] - k["T"])]
+        for lo, hi in edges:
+            sel = bands[(bands.output == y) & (bands.lo == lo) & (bands.hi == hi) & (bands.variant == "seeds")]
+            cells.append(num(float(sel["T"].iloc[0])) if len(sel) else "--")
+        body += f"{OUTPUT_LABEL[y]} & " + " & ".join(cells) + " \\\\\n"
+    body += "\\bottomrule\n"
+    n = int(sd[sd.variant == "seeds"].points.iloc[0])
+    counts = ", ".join(str(int(bands[(bands.lo == lo) & (bands.variant == "seeds")].points.iloc[0]))
+                       for lo, _ in edges)
+    return wrap(body, f"Total indices of the seeds on the model, from the reruns of the first {n} points "
+                "with the seeds redrawn (estimator of Jansen 1999, 95\\% bootstrap interval over the points). "
+                "The draw of the country multipliers is the difference between the two seeds together and "
+                "the seed of K-means. The last columns give the total index of the two seeds within three "
+                f"bands of the spread X7 of the multipliers ({counts} points). Outputs without clustering "
+                "do not depend on the seed of K-means.",
+                "tab:seeds", "lrrrrrrrr", size="\\footnotesize", fit=True)
 
 
 def table_convergence(results):
@@ -262,12 +392,17 @@ def table_stability(results, threshold=0.05):
     cross the threshold either way, and the outputs (of twelve) whose order
     above the threshold, top two and top five are kept."""
     ind = pd.read_csv(results / "indices.csv")
-    sur = pd.read_csv(results / "surrogate.csv")
+    use_t = (results / "totals.csv").is_file()
+    sur = pd.read_csv(results / ("totals.csv" if use_t else "surrogate.csv"))
+    third = "T" if use_t else "Shapley"
     factors = [f"X{i}" for i in range(1, 22)]
     sizes = sorted(set(ind.N) & set(sur.N))
     steps = list(zip(sizes[:-1], sizes[1:]))[-2:]
 
     def get(fam, y, N):
+        if fam == "T":
+            x = sur[(sur.N == N) & (sur.output == y) & ~sur.player.isin(["D_cont", "P_appliances"])]
+            return x.set_index("player")["T"]
         if fam == "Shapley":
             x = sur[(sur.N == N) & (sur.output == y) & sur.shapley.notna() & (sur.player != "D_cont")]
             return x.set_index("player").shapley
@@ -277,13 +412,14 @@ def table_stability(results, threshold=0.05):
     head = " & ".join(f"\\multicolumn{{3}}{{c}}{{{n0:,} to {n1:,} runs}}" for n0, n1 in steps)
     rules = "".join(f"\\cmidrule(lr){{{2 + 3 * i}-{4 + 3 * i}}}" for i in range(len(steps)))
     body = (f"\\toprule\n & {head} \\\\\n{rules}\n"
-            " & " + " & ".join(["First-order & OT & Shapley"] * len(steps)) + " \\\\\n\\midrule\n")
+            " & " + " & ".join([f"First-order & OT & {'Total' if use_t else 'Shapley'}"] * len(steps))
+            + " \\\\\n\\midrule\n")
     labels = [f"Below {threshold:.2f}, then at or above it", f"At or above {threshold:.2f}, then below it",
               f"Order above {threshold:.2f} kept (outputs)", "Top two kept (outputs)",
               "Top five kept (outputs)"]
     cells = {k: [] for k in range(5)}
     for n0, n1 in steps:
-        for fam in ("S", "OT", "Shapley"):
+        for fam in ("S", "OT", third):
             counts = [stability_counts(get(fam, y, n0), get(fam, y, n1), threshold) for y in OUTPUTS]
             cells[0].append(sum(c[0] for c in counts))
             cells[1].append(sum(c[1] for c in counts))
@@ -292,12 +428,16 @@ def table_stability(results, threshold=0.05):
     for k, lab in enumerate(labels):
         body += lab + " & " + " & ".join(str(v) for v in cells[k]) + " \\\\\n"
     body += "\\bottomrule\n"
-    players = sur[(sur.N == sizes[-1]) & sur.shapley.notna() & (sur.player != "D_cont")].player.nunique()
-    return wrap(body, f"Screening at {threshold:.2f} and ranking from one nested size to the next. "
-                f"First-order and OT indices on the 21 factors one by one, Shapley effects on the {players} "
-                "players other than the dummy (the six powers as one). Counts of indices over the twelve "
-                "outputs, then the number of outputs whose order is kept.", "tab:stability",
-                "l" + "rrr" * len(steps), size="\\footnotesize")
+    if use_t:
+        what = ("First-order and OT indices on the 21 factors one by one, total indices of the surrogate "
+                "on its 19 factors (the seeds apart).")
+    else:
+        players = sur[(sur.N == sizes[-1]) & sur.shapley.notna() & (sur.player != "D_cont")].player.nunique()
+        what = (f"First-order and OT indices on the 21 factors one by one, Shapley effects on the {players} "
+                "players other than the dummy (the six powers as one).")
+    return wrap(body, f"Screening at {threshold:.2f} and ranking from one nested size to the next. " + what
+                + " Counts of indices over the twelve outputs, then the number of outputs whose order is "
+                "kept.", "tab:stability", "l" + "rrr" * len(steps), size="\\footnotesize")
 
 
 def table_adjustment(results):
@@ -373,7 +513,7 @@ def table_ot_agreement(results):
         body += (f"{y} {SHORT[y]} & {spearmanr(s, o)[0]:.2f} & {top_down_correlation(s, o):.2f} & "
                  f"{label(top_s[0])} & {label(top_o[0])} & {'yes' if list(top_s) == list(top_o) else 'no'} \\\\\n")
     body += "\\bottomrule\n"
-    return wrap(body, "Rankings of the 21 factors by the adjusted first-order and OT indices at the largest "
+    return wrap(body, "Rankings of the 21 factors by the first-order and OT indices at the largest "
                 "size. The top-down correlation (Iman and Conover 1987) weighs the leading factors most.",
                 "tab:ot_agreement", "lrrllc", size="\\footnotesize", fit=True)
 
@@ -389,7 +529,7 @@ def table_ot_excess(results, excess=0.04):
         body += (f"{r.output} & {label(r.factor)} & {num(r.S)} & {num(r.OT)} & {num(r.location_OT)} & "
                  f"{num(r['mean'])} & {num(r['spread'])} & {num(r['shape'])} \\\\\n")
     body += "\\bottomrule\n"
-    return wrap(body, f"Factors whose adjusted OT index exceeds by more than {excess:.2f} the OT index of a "
+    return wrap(body, f"Factors whose OT index exceeds by more than {excess:.2f} the OT index of a "
                 "factor that only shifts a Gaussian output with the same first-order index, "
                 "$(S + (1 - \\sqrt{1 - S})^2)/2$. The parts follow from "
                 "$W_2^2 = (m_c - m)^2 + (s_c - s)^2 + 2 s_c s (1 - r_c)$ for the mean $m$, standard deviation "
@@ -436,7 +576,7 @@ def table_budget(results):
     d = pd.read_csv(results / "budget.csv").set_index("output")
     split = "kmeans" in d.columns
     head = ("\\toprule\nOutput & First-order & Interactions & "
-            + ("K-means & Country & " if split else "")
+            + ("K-means & Draw of the & " if split else "")
             + "Seeds & Not \\\\\n & effects & & " + ("seed & multipliers & " if split else "")
             + "together & reproduced \\\\\n\\midrule\n")
     body = head
@@ -449,7 +589,7 @@ def table_budget(results):
     body += "\\bottomrule\n"
     return wrap(body, "Variance budget of every output, as shares of Var Y. First-order effects and "
                 "interactions of the factors other than the seeds from the surrogate (the sum of its "
-                "first-order indices, and its Shapley effects less that sum), the total index of the seeds "
+                "first-order indices, and the share it reproduces less that sum), the total index of the seeds "
                 "on the model from the reruns with the seeds redrawn (Jansen's estimator, 95\\% bootstrap "
                 "interval), and what the surrogate does not reproduce by difference.", "tab:budget",
                 "lrr" + ("rr" if split else "") + "rr", size="\\footnotesize", fit=True)
@@ -467,7 +607,8 @@ def main(argv=None):
                     ("uniform", table_uniform), ("knn", table_knn), ("adjustment", table_adjustment),
                     ("stability", table_stability), ("distributions", table_distributions),
                     ("ot_agreement", table_ot_agreement), ("ot_excess", table_ot_excess),
-                    ("brackets", table_brackets), ("budget", table_budget)):
+                    ("brackets", table_brackets), ("budget", table_budget), ("totals", table_totals),
+                    ("convergence_totals", table_convergence_totals), ("seeds", table_seeds)):
         try:
             (args.out / f"tab_{name}.tex").write_text(f(r))
         except (FileNotFoundError, KeyError, AttributeError) as e:

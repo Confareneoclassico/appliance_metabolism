@@ -197,3 +197,55 @@ def test_seed_totals_and_budget():
     assert np.allclose(parts, 1.0)
     assert np.allclose(b.first_order, 0.6) and np.allclose(b.interactions, 0.2)
     assert np.allclose(b.error, 0.05) and np.allclose(b.multipliers, 0.05)
+
+
+def test_surrogate_totals_on_a_known_model():
+    """First-order and total indices of the surrogate on a model with main
+    effects and an interaction: 4 a b with a = X19 / 150 and b = X12 / 100
+    uniform on [0, 1] (V_a = V_b = 1/3, V_ab = 1/9), and X13 alone (1/4); the
+    dummy and the other factors have no effect. Sizes beyond the runs present
+    are dropped, and the bootstrap gives intervals and the screening at the
+    largest size. (A pure interaction without main effects, an XOR, would not
+    do: greedy trees find no first split for it.)"""
+    U = design.sample(9)                                    # 512 runs
+    t = pd.DataFrame(design.analysis_matrix(U), columns=design.COLUMNS)
+    a, b = t["X19"] / 150, t["X12"] / 100
+    y = 4 * a * b + t["X13"]
+    tot, conv = an.surrogate_totals(t, y.to_numpy()[:, None], sizes=[256, 512, 1024], B=4,
+                                    n_pf=2 ** 13, n_pf_boot=2 ** 11, outputs=["Y"])
+    assert sorted(tot.N.unique()) == [256, 512]
+    r = tot[tot.N == 512].set_index("player")
+    var = 1 / 3 + 1 / 3 + 1 / 9 + 1 / 4
+    for f in ("X19", "X12"):
+        assert np.isclose(r.loc[f, "S"], (1 / 3) / var, atol=0.06)
+        assert np.isclose(r.loc[f, "T"], (1 / 3 + 1 / 9) / var, atol=0.06)
+        assert r.loc[f, "T"] > r.loc[f, "S"]
+    assert np.isclose(r.loc["X13", "T"], (1 / 4) / var, atol=0.06)
+    assert r.loc["D_cont", "T"] < 0.03
+    assert r.loc["X13", "lo"] <= r.loc["X13", "T"] <= r.loc["X13", "hi"]
+    assert bool(r.loc["X13", "nonzero"]) and not bool(r.loc["X17", "nonzero"])
+    c = conv.set_index("N")
+    assert np.isnan(c.loc[256, "max_change"]) and np.isfinite(c.loc[512, "max_change"])
+
+
+def test_seed_dispersion_follows_the_modulating_factor():
+    """A seed whose effect grows with X7: the total index of the seed within
+    the bands of X7 rises, and the bands average back to the total index."""
+    rng = np.random.default_rng(8)
+    n = 600
+    x7 = rng.random(n) * 0.3
+    base = pd.DataFrame({"run": np.arange(n), "X7": x7, "X16": rng.integers(6, 13, n),
+                         "X2": rng.random(n), "X13": rng.integers(0, 2, n), "X19": rng.random(n) * 150,
+                         **{y: rng.normal(size=n) for y in an.OUTPUTS}})
+    re = base.copy()
+    re["Y7"] = base["Y7"] + x7 * 10 * rng.normal(size=n)   # effect of the seed scales with X7
+    bands, corr = an.seed_dispersion(base, re, n_perm=200)
+    b = bands[(bands.output == "Y7") & (bands.factor == "X7")].sort_values("lo")
+    assert list(b.points) == [int(((x7 >= 0) & (x7 < 0.1)).sum()), int(((x7 >= 0.1) & (x7 < 0.2)).sum()),
+                              int((x7 >= 0.2).sum())]
+    assert b["T"].is_monotonic_increasing
+    T = an.seed_totals(base, re).set_index("output").loc["Y7", "T"]
+    assert np.isclose((b["T"] * b.points).sum() / n, T)
+    c = corr[corr.output == "Y7"].set_index("factor")
+    assert c.loc["X7", "rho"] > 0.3 and c.loc["X7", "p"] < 0.01
+    assert set(bands.output) == {"Y7"}                      # outputs the seed does not move are left out
