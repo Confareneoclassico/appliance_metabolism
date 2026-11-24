@@ -21,6 +21,14 @@ Writes one .tex file per table (booktabs, caption above the table):
                        1,024 runs or more
   tab_stability.tex    screening at 0.05 and ranking from one nested size to the
                        next, for the last two steps
+  tab_distributions.tex  the uncertainty analysis: moments and shape of every
+                       output over the runs
+  tab_ot_agreement.tex rankings of the OT and first-order indices compared
+  tab_ot_excess.tex    the factors whose OT index exceeds that of a pure shift
+                       of a Gaussian output, with the parts of the index
+  tab_brackets.tex     first-order index, Shapley effect and total index of
+                       the surrogate, the appliance powers one by one and as a
+                       group (longtable)
 """
 import argparse
 import sys
@@ -286,8 +294,8 @@ def table_stability(results, threshold=0.05):
     players = sur[(sur.N == sizes[-1]) & sur.shapley.notna() & (sur.player != "D_cont")].player.nunique()
     return wrap(body, f"Screening at {threshold:.2f} and ranking from one nested size to the next. "
                 f"First-order and OT indices on the 21 factors one by one, Shapley effects on the {players} "
-                "players other than the dummy (the six powers as one). Counts of indices over the twelve outputs, then the "
-                "number of outputs whose order is kept.", "tab:stability",
+                "players other than the dummy (the six powers as one). Counts of indices over the twelve "
+                "outputs, then the number of outputs whose order is kept.", "tab:stability",
                 "l" + "rrr" * len(steps), size="\\footnotesize")
 
 
@@ -318,6 +326,111 @@ def table_adjustment(results):
     return wrap(body, caption, "tab:adjustment", "lll" + "rr" * len(sizes), size="\\footnotesize")
 
 
+SHORT = {"Y1": "Lowest-energy share", "Y2": "Predictable-peak share", "Y2b": "Peak-time SD (h)",
+         "Y3": "Coincident peak (\\%)", "Y4": "Own peak (\\%)", "Y5": "Strongest $V$",
+         "Y6": "Solutions led by adults", "Y7": "Single/multi energy", "Y8": "Agreement (ARI)",
+         "Y9": "Shape, Belgium", "Y10": "Shape, France", "Y11": "Evening/midday, France"}
+
+
+def ordinal(k):
+    k = int(round(k))
+    suffix = "th" if 10 <= k % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(k % 10, "th")
+    return f"{k}{suffix}"
+
+
+def table_distributions(results):
+    s = pd.read_csv(results / "summary.csv").set_index("output")
+    body = ("\\toprule\nOutput & Canonical & Median & 5th to 95th & Mean & SD & Skew- & Excess & BC & Spike \\\\\n"
+            " & (percentile) & & percentile & & & ness & kurtosis & & \\\\\n\\midrule\n")
+    for y in OUTPUTS:
+        r = s.loc[y]
+        d = 0 if y == "Y6" else 2 if y in ("Y2b", "Y3", "Y4") else 3
+        spike = f"{100 * r.mode_share:.0f}\\% at {r['mode']:g}" if r.mode_share > 0.2 else ""
+        body += (f"{y} {SHORT[y]} & {num(r.canonical, d)} ({ordinal(r.canonical_percentile)}) & "
+                 f"{num(r['median'], d)} & "
+                 f"{num(r.p05, d)} to {num(r.p95, d)} & {num(r['mean'], d)} & {num(r.sd, d if d else 1)} & "
+                 f"{num(r.skewness, 2)} & {num(r.excess_kurtosis, 2)} & {num(r.bimodality, 2)} & {spike} \\\\\n")
+    body += "\\bottomrule\n"
+    return wrap(body, "Uncertainty analysis: every output over the runs of the sample. Skewness and "
+                "excess kurtosis bias-corrected. BC is the bimodality coefficient of Pfister et al. (2013), "
+                "above 0.555 for a bimodal or strongly skewed distribution. Spike: share of the runs at one "
+                "value, where it exceeds a fifth.", "tab:distributions", "lrrrrrrrrl", size="\\footnotesize",
+                fit=True)
+
+
+def table_ot_agreement(results):
+    from gsa.analyse import top_down_correlation
+    from scipy.stats import spearmanr
+    d = pd.read_csv(results / "ot_parts.csv")
+    body = ("\\toprule\nOutput & Spearman & Top-down & Leading by S & Leading by OT & Top four \\\\\n"
+            " & correlation & correlation & & & in the same order \\\\\n\\midrule\n")
+    for y in OUTPUTS:
+        a = d[d.output == y]
+        s, o = a.S.to_numpy(), a.OT.to_numpy()
+        f = a.factor.to_numpy()
+        top_s, top_o = f[np.argsort(-s)][:4], f[np.argsort(-o)][:4]
+        body += (f"{y} {SHORT[y]} & {spearmanr(s, o)[0]:.2f} & {top_down_correlation(s, o):.2f} & "
+                 f"{label(top_s[0])} & {label(top_o[0])} & {'yes' if list(top_s) == list(top_o) else 'no'} \\\\\n")
+    body += "\\bottomrule\n"
+    return wrap(body, "Rankings of the 21 factors by the adjusted first-order and OT indices at the largest "
+                "size. The top-down correlation (Iman and Conover 1987) weighs the leading factors most.",
+                "tab:ot_agreement", "lrrllc", size="\\footnotesize", fit=True)
+
+
+def table_ot_excess(results, excess=0.04):
+    d = pd.read_csv(results / "ot_parts.csv")
+    d = d[d.OT - d.location_OT > excess].copy()
+    d["o"] = d.output.map({y: i for i, y in enumerate(OUTPUTS)})
+    d = d.sort_values(["o", "OT"], ascending=[True, False])
+    body = ("\\toprule\nOutput & Factor & S & OT & OT of & \\multicolumn{3}{c}{Parts of the OT index} \\\\\n"
+            "\\cmidrule(lr){6-8}\n & & & & a shift & Mean & Spread & Shape \\\\\n\\midrule\n")
+    for _, r in d.iterrows():
+        body += (f"{r.output} & {label(r.factor)} & {num(r.S)} & {num(r.OT)} & {num(r.location_OT)} & "
+                 f"{num(r['mean'])} & {num(r['spread'])} & {num(r['shape'])} \\\\\n")
+    body += "\\bottomrule\n"
+    return wrap(body, f"Factors whose adjusted OT index exceeds by more than {excess:.2f} the OT index of a "
+                "factor that only shifts a Gaussian output with the same first-order index, "
+                "$(S + (1 - \\sqrt{1 - S})^2)/2$. The parts follow from "
+                "$W_2^2 = (m_c - m)^2 + (s_c - s)^2 + 2 s_c s (1 - r_c)$ for the mean $m$, standard deviation "
+                "$s$ and correlation $r_c$ of the quantile functions of a class and of the whole sample, each "
+                "averaged over the classes and divided by $2\\,\\mathrm{Var}\\,Y$. The mean part is $S/2$.",
+                "tab:ot_excess", "llrrrrrr", size="\\footnotesize")
+
+
+def table_brackets(results, floor=0.05):
+    b = pd.read_csv(results / "brackets.csv")
+    ind = pd.read_csv(results / "indices.csv")
+    N = ind.N.max()
+    adj = ind[(ind.N == N) & (ind.family == "S")].set_index(["output", "factor"]).point
+    head = ("\\toprule\nOutput & Player & S, given & S & Shapley & T \\\\\n"
+            " & & data & & effect & \\\\\n\\midrule\n")
+    body = head + "\\endfirsthead\n" + head + "\\endhead\n"
+    for y in OUTPUTS:
+        a = b[(b.output == y) & (b.game == "single") & (b.player != "D_cont")]
+        g = b[(b.output == y) & (b.game == "grouped") & (b.player == "P_appliances")].iloc[0]
+        rows = a[(a["T"] >= floor) | (a.shapley >= floor)].sort_values("shapley", ascending=False)
+        first = True
+        for _, r in rows.iterrows():
+            body += (f"{y if first else ''} & {label(r.player)} & {num(adj[(y, r.player)])} & {num(r.S)} & "
+                     f"{num(r.shapley)} & {num(r['T'])} \\\\\n")
+            first = False
+        pw = a[a.player.isin(["X1", "X2", "X3", "X4", "X5", "X6"])]
+        sum_given = sum(adj[(y, f"X{i}")] for i in range(1, 7))
+        body += (f"{y if first else ''} & Powers, sum of the six & {num(sum_given)} & {num(pw.S.sum())} & "
+                 f"{num(pw.shapley.sum())} & {num(pw['T'].sum())} \\\\\n"
+                 f" & Powers as one player & -- & {num(g.S)} & {num(g.shapley)} & {num(g['T'])} \\\\\n"
+                 f" & Reproduced by the surrogate & & & {num(a.explained.iloc[0])} & \\\\\n")
+        body += "\\midrule\n" if y != OUTPUTS[-1] else ""
+    body += "\\bottomrule\n"
+    return wrap(body, f"First-order index S, Shapley effect and total index T of the surrogate on independent "
+                f"points, as shares of Var Y, for the players with an effect or total index of at least "
+                f"{floor:.2f}, the appliance powers one by one, with the first-order index of the given-data "
+                "estimator beside them. For the six powers together: the sums of their indices, and the "
+                "closed indices and Shapley effect of the group as one player. For independent inputs "
+                "$S \\le \\mathrm{Sh} \\le T$.", "tab:brackets", "llrrrr", long=True,
+                size="\\footnotesize")
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--results", type=Path, required=True)
@@ -328,10 +441,12 @@ def main(argv=None):
     for name, f in (("outputs", table_outputs), ("dependence", table_dependence),
                     ("indices", table_indices), ("convergence", table_convergence),
                     ("uniform", table_uniform), ("knn", table_knn), ("adjustment", table_adjustment),
-                    ("stability", table_stability)):
+                    ("stability", table_stability), ("distributions", table_distributions),
+                    ("ot_agreement", table_ot_agreement), ("ot_excess", table_ot_excess),
+                    ("brackets", table_brackets)):
         try:
             (args.out / f"tab_{name}.tex").write_text(f(r))
-        except FileNotFoundError as e:
+        except (FileNotFoundError, KeyError, AttributeError) as e:
             print(f"tab_{name}: {e}")
     print(f"Tables written to {args.out}")
 

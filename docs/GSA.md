@@ -316,3 +316,23 @@ the first-order indices meet all four criteria for every output, and the OT
 indices miss only the change criterion for Y9 and Y10, through the index of
 the seed X8, which is mostly the bias of the estimator (0.03, 0.02 and 0.01 at
 1,024, 2,048 and 4,096 runs).
+
+**Uncertainty analysis and relations between the indices.** `summary.csv`
+describes every output over the runs: percentiles, moments, the bimodality
+coefficient of Pfister et al. (2013) and the share of the runs at the most
+frequent value, which shows the zero spike of Y2. `ot_parts.csv` splits the
+OT index of every factor by the decomposition of the squared Wasserstein
+distance into mean, spread and shape (Irpino and Verde 2015): the mean part is
+S/2, and a factor that only shifts a Gaussian output has the OT index
+(S + (1 - sqrt(1 - S))^2) / 2, so that the OT and first-order rankings can
+differ only through effects on the spread and the shape. `brackets.csv` gives
+the first-order index, the Shapley effect and the total index of the
+surrogate on independent points for every factor one by one (the six powers
+included) and for the powers as a group: first-order and total indices by
+the pick-freeze estimators of Saltelli et al. (2010) and Jansen (1999) on
+2^16 pairs of points, Shapley effects from ten independent runs of the
+permutation estimator with 10,000 permutations each, whose spread gives the
+Monte Carlo error. For independent inputs S <= Sh <= T for every player (Owen
+2014), and the sum of the Shapley effects of the powers one by one is at
+least the effect of their group, with equality when no interaction joins two
+powers and another factor.

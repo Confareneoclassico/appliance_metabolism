@@ -26,6 +26,16 @@ Draws, as PDF:
   fig_drivers.pdf      outputs of the runs against their leading factors, with
                        the canonical value (needs --share, the folder of
                        gsa_outputs.csv)
+  fig_distributions.pdf  the uncertainty analysis: the distribution of every
+                       output over the runs, split by diarist coverage, with
+                       the canonical value (needs --share)
+  fig_ot_s.pdf         adjusted OT index against first-order index of every
+                       factor and output, with the bound S/2 and the curve of
+                       a pure shift of a Gaussian output (needs ot_parts.csv)
+  fig_brackets.pdf     first-order index, Shapley effect and total index of
+                       the surrogate for the leading players of every output,
+                       the appliance powers one by one, and the share of Var Y that the
+                       surrogate reproduces (needs brackets.csv)
 
 Colours follow the validated reference palette (one blue ramp for
 magnitudes; blue, orange and aqua as categorical slots, which pass the
@@ -414,6 +424,162 @@ def fig_drivers(table, summary, out):
     plt.close(fig)
 
 
+UNITS = {"Y1": "Share of household-days", "Y2": "Share of household-days", "Y2b": "Hours",
+         "Y3": "Change (%)", "Y4": "Change (%)", "Y5": "Cram\u00e9r's V (bias-corrected)",
+         "Y6": "Solutions (of 48)", "Y7": "Ratio of mean daily energy",
+         "Y8": "Adjusted Rand index", "Y9": "Correlation of hourly shapes",
+         "Y10": "Correlation of hourly shapes", "Y11": "Ratio of hourly maxima"}
+
+
+def ordinal(k):
+    k = int(round(k))
+    suffix = "th" if 10 <= k % 100 <= 20 else {1: "st", 2: "nd", 3: "rd"}.get(k % 10, "th")
+    return f"{k}{suffix}"
+
+
+def family_colour(player):
+    if player in APPLIANCES or player == "P_appliances":
+        return BLUE
+    return {"X13": ORANGE, "X19": AQUA}.get(player, MUTED)
+
+
+def fig_distributions(table, summary, out):
+    """Histogram of every output over the runs, stacked by diarist coverage
+    (the factor that splits the bimodal outputs), with the canonical value.
+    A spike holding more than a fifth of the runs is cut and labelled."""
+    canon = summary.set_index("output")
+    fig, axes = plt.subplots(4, 3, figsize=(7.0, 8.4))
+    groups = [(0, "Every diarist", BLUE), (1, "First listed", ORANGE)]
+    for k, (ax, y) in enumerate(zip(axes.ravel(), OUTPUTS)):
+        v = table[y].to_numpy(dtype=float)
+        c = float(canon.loc[y, "canonical"])
+        lo, hi = min(v.min(), c), max(v.max(), c)
+        if y == "Y6":
+            bins = np.arange(-0.5, 40.5, 1.0)
+        else:
+            pad = 0.02 * (hi - lo)
+            bins = np.linspace(lo - pad, hi + pad, 41)
+        parts = [table.loc[table.X13 == lev, y].to_numpy(dtype=float) for lev, _, _ in groups]
+        counts, _, _ = ax.hist(parts, bins=bins, stacked=True, color=[g[2] for g in groups],
+                               edgecolor=SURFACE, linewidth=0.3, label=[g[1] for g in groups])
+        total = counts[-1]
+        top = np.sort(total)
+        spike = top[-1] > 0.2 * len(v) and len(top) > 1
+        height = top[-2] if spike else top[-1]
+        ax.set_ylim(0, 1.32 * height)               # headroom for the labels
+        if spike:
+            i = int(np.argmax(total))
+            ax.annotate(f"{int(total[i]):,} runs at {canon.loc[y, 'mode']:g}, cut",
+                        ((bins[i] + bins[i + 1]) / 2, 1.0), xycoords=("data", "axes fraction"),
+                        xytext=(5, -2), textcoords="offset points", ha="left", va="top",
+                        fontsize=5.5, color=TEXT2)
+        ax.axvline(c, color=TEXT, linewidth=0.9, linestyle=(0, (3, 2)))
+        pct = canon.loc[y, "canonical_percentile"]
+        x0, x1 = bins[0], bins[-1]
+        left = (c - x0) / (x1 - x0) > 0.72 or (spike and (c - x0) / (x1 - x0) < 0.3)
+        ax.annotate(f"canonical, {ordinal(pct)} percentile", (c, 1.0), xycoords=("data", "axes fraction"),
+                    xytext=(-3 if left else 3, -2 if not spike else -10), textcoords="offset points",
+                    ha="right" if left else "left", va="top", fontsize=5.5, color=TEXT2)
+        ax.set_xlim(x0, x1)
+        ax.set_title(SHORT_OUTPUT[y], loc="left")
+        ax.set_xlabel(UNITS[y], fontsize=6.5)
+        if k % 3 == 0:
+            ax.set_ylabel("Runs")
+        ax.grid(axis="y")
+        ax.set_axisbelow(True)
+    handles = [plt.Rectangle((0, 0), 1, 1, color=g[2]) for g in groups]
+    fig.legend(handles, [f"Diarist coverage: {g[1].lower()}" for g in groups], loc="upper center",
+               ncol=2, bbox_to_anchor=(0.5, 1.0))
+    fig.tight_layout(rect=(0, 0, 1, 0.975))
+    fig.savefig(out / "fig_distributions.pdf")
+    plt.close(fig)
+
+
+def fig_ot_s(otp, out, excess=0.04):
+    """OT index against first-order index (adjusted) of every factor and
+    output, with the lower bound S/2 and the OT index of a factor that only
+    shifts a Gaussian output. Points more than `excess` above that curve, the
+    factors that change the spread or shape of the output, are named."""
+    from gsa.analyse import location_ot
+    fig, axes = plt.subplots(1, 2, figsize=(7.0, 3.5))
+    grid = np.linspace(0, 1, 201)
+    d = otp.copy()
+    d["excess"] = d.OT - d.location_OT
+    for ax, (xmax, ymax), named in zip(axes, ((1.0, 1.0), (0.5, 0.42)), (False, True)):
+        ax.plot(grid, grid / 2, color=AXIS, linewidth=0.8, label="Lower bound S/2")
+        ax.plot(grid, location_ot(grid), color=TEXT2, linewidth=0.9, linestyle=(0, (3, 2)),
+                label="Shift of a Gaussian output")
+        for colour in (MUTED, BLUE, AQUA, ORANGE):
+            sel = d[[family_colour(f) == colour for f in d.factor]]
+            ax.scatter(sel.S, sel.OT, s=10, color=colour, edgecolor=SURFACE, linewidth=0.4, zorder=3)
+        if named:
+            lab = d[(d.excess > excess) & (d.S <= xmax) & (d.OT <= ymax)].sort_values("OT")
+            placed = []                              # (x, y) of the labels already set
+            for _, r in lab.iterrows():
+                x, y = r.S + 0.008 * xmax, r.OT
+                for px, py in sorted(placed, key=lambda t: t[1]):
+                    if abs(px - x) < 0.2 * xmax and abs(py - y) < 0.05 * ymax:
+                        y = py + 0.05 * ymax
+                placed.append((x, y))
+                ax.annotate(f"{r.factor} on {r.output}", (r.S, r.OT), xytext=(x, y), textcoords="data",
+                            fontsize=5.5, color=TEXT2, va="center",
+                            arrowprops=dict(arrowstyle="-", color=AXIS, linewidth=0.5,
+                                            shrinkA=0, shrinkB=2) if abs(y - r.OT) > 1e-9 else None)
+        ax.set_xlim(0, xmax)
+        ax.set_ylim(0, ymax)
+        ax.set_xlabel("First-order index S, adjusted")
+        ax.grid(True)
+        ax.set_axisbelow(True)
+    axes[0].set_ylabel("OT index, adjusted")
+    axes[0].set_title("All factors and outputs", loc="left")
+    axes[1].set_title("Detail", loc="left")
+    handles = [plt.Line2D([], [], color=c, marker="o", linestyle="", markersize=4)
+               for c in (BLUE, ORANGE, AQUA, MUTED)]
+    names = ["Appliance powers", "Diarist coverage", "Lighting", "Other factors"]
+    lines = axes[0].get_legend_handles_labels()
+    axes[0].legend(handles + lines[0], names + lines[1], loc="upper left", fontsize=5.5)
+    fig.tight_layout()
+    fig.savefig(out / "fig_ot_s.pdf")
+    plt.close(fig)
+
+
+def fig_brackets(br, out, floor=0.02, top=7):
+    """For every output, the players of the surrogate (the appliance powers
+    one by one) whose total index reaches `floor`: a line from the
+    first-order to the total index, and the Shapley effect as a dot, all as
+    shares of Var Y. For independent inputs S <= Sh <= T."""
+    b = br[(br.game == "single") & (br.player != "D_cont")]
+    fig, axes = plt.subplots(4, 3, figsize=(7.0, 8.6))
+    for ax, y in zip(axes.ravel(), OUTPUTS):
+        a = b[(b.output == y) & (b["T"] >= floor)].sort_values("shapley", ascending=False).head(top)
+        a = a.iloc[::-1]
+        for i, (_, r) in enumerate(a.iterrows()):
+            colour = family_colour(r.player)
+            ax.plot([r.S, r["T"]], [i, i], color=colour, linewidth=1.6, solid_capstyle="round")
+            ax.plot(r.shapley, i, "o", color=colour, markersize=4, markeredgecolor=SURFACE,
+                    markeredgewidth=0.6, zorder=3)
+        ax.set_yticks(range(len(a)))
+        ax.set_yticklabels([PLAYER_LABEL[p].strip() for p in a.player], fontsize=5.5)
+        ax.set_ylim(-0.7, max(len(a), 1) - 0.3)
+        hi = float(max(a["T"].max(), a.shapley.max())) if len(a) else 0.1
+        ax.set_xlim(0, min(1.06, max(0.1, 1.12 * hi)))
+        explained = float(b.loc[b.output == y, "explained"].iloc[0])
+        ax.set_title(SHORT_OUTPUT[y], loc="left")
+        ax.annotate(f"reproduced {explained:.0%}", (1.0, 0.0), xycoords="axes fraction", xytext=(-2, 3),
+                    textcoords="offset points", ha="right", va="bottom", fontsize=5.5, color=TEXT2)
+        ax.grid(axis="x")
+        ax.set_axisbelow(True)
+    for ax in axes[-1]:
+        ax.set_xlabel("Share of Var Y")
+    handles = [plt.Line2D([], [], color=TEXT2, linewidth=1.6),
+               plt.Line2D([], [], color=TEXT2, marker="o", linestyle="", markersize=4)]
+    fig.legend(handles, ["First-order to total index", "Shapley effect"], loc="upper center",
+               ncol=2, bbox_to_anchor=(0.5, 1.0))
+    fig.tight_layout(rect=(0, 0, 1, 0.975))
+    fig.savefig(out / "fig_brackets.pdf")
+    plt.close(fig)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--results", type=Path, required=True)
@@ -424,7 +590,15 @@ def main(argv=None):
     style()
     r = args.results
     if args.share is not None and (r / "summary.csv").is_file():
-        fig_drivers(pd.read_csv(args.share / "gsa_outputs.csv"), pd.read_csv(r / "summary.csv"), args.out)
+        table = pd.read_csv(args.share / "gsa_outputs.csv")
+        summ = pd.read_csv(r / "summary.csv")
+        fig_drivers(table, summ, args.out)
+        if "mode" in summ.columns:
+            fig_distributions(table, summ, args.out)
+    if (r / "ot_parts.csv").is_file():
+        fig_ot_s(pd.read_csv(r / "ot_parts.csv"), args.out)
+    if (r / "brackets.csv").is_file():
+        fig_brackets(pd.read_csv(r / "brackets.csv"), args.out)
     ind = pd.read_csv(r / "indices.csv")
     sur = pd.read_csv(r / "surrogate.csv")
     fig_effects(sur, args.out)

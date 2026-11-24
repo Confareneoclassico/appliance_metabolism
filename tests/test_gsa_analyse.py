@@ -115,3 +115,57 @@ def test_stability_counts_crossings_and_order():
     assert not top2 and not top5         # X3 overtakes X2
     same = stability_counts(a, a * 1.01)
     assert same == (0, 0, True, True, True)
+
+
+def test_ot_parts_add_up_and_mean_part_is_half_s():
+    rng = np.random.default_rng(3)
+    n = 4000
+    X = rng.random((n, 3))
+    y = X[:, 0] + 0.6 * (0.2 + X[:, 1]) * rng.normal(size=n)    # X0 shifts, X1 spreads
+    cls, K, off = an.column_classes(X)
+    S, O, P = an.indices_one_output(cls, K, off, np.ones((n, 3)), y, parts=True)
+    assert np.allclose(P.sum(axis=0), O)
+    assert np.allclose(P[0], S / 2)
+    assert (P >= -1e-12).all()
+    assert P[0, 0] > P[1, 0]                 # X0: mostly the mean part
+    assert P[1, 1] > 5 * P[0, 1]             # X1: mostly the spread part
+    assert O[1] > 2 * an.location_ot(S[1])   # far above the curve of a pure shift
+
+
+def test_location_ot_matches_a_gaussian_shift():
+    rng = np.random.default_rng(4)
+    n = 40000
+    x = rng.normal(size=n)
+    y = x + rng.normal(size=n)               # S = 1/2
+    cls, K, off = an.column_classes(x[:, None])
+    S, O = an.indices_one_output(cls, K, off, np.ones((n, 1)), y)
+    assert abs(S[0] - 0.5) < 0.02
+    assert abs(O[0] - an.location_ot(S[0])) < 0.01
+    assert abs(an.location_ot(1.0) - 1.0) < 1e-12 and an.location_ot(0.0) == 0.0
+
+
+def test_top_down_correlation():
+    a = np.array([0.5, 0.3, 0.1, 0.05, 0.0])
+    assert abs(an.top_down_correlation(a, a) - 1) < 1e-12
+    assert np.isclose(an.savage_scores(a).sum(), len(a))
+    swap_top = np.array([0.3, 0.5, 0.1, 0.05, 0.0])
+    swap_tail = np.array([0.5, 0.3, 0.1, 0.0, 0.05])
+    assert an.top_down_correlation(a, swap_tail) > an.top_down_correlation(a, swap_top)
+
+
+def test_pick_freeze_on_an_analytic_function():
+    rng = np.random.default_rng(5)
+    f = lambda Z: Z[:, 0] + 2 * Z[:, 1] + Z[:, 0] * Z[:, 2]      # noqa: E731, uniform inputs
+    A, B = rng.random((2 ** 17, 3)), rng.random((2 ** 17, 3))
+    res = an.pick_freeze(f, A, B, [[0], [1], [2], [0, 2]])
+    v0, v1, v2, v02 = 2.25 / 12, 4 / 12, 0.25 / 12, 1 / 144
+    var = v0 + v1 + v2 + v02
+    S = res[:, 0] / var
+    T = res[:, 2] / var
+    assert np.allclose(S, [v0 / var, v1 / var, v2 / var, (v0 + v2 + v02) / var], atol=0.015)
+    assert np.allclose(T, [(v0 + v02) / var, v1 / var, (v2 + v02) / var, (v0 + v2 + v02) / var], atol=0.015)
+    # an offset changes nothing (the values are centred before the products)
+    g = lambda Z: 100 + f(Z)                                     # noqa: E731
+    res_g = an.pick_freeze(g, A, B, [[0], [1], [2], [0, 2]])
+    assert np.allclose(res_g[:, 0], res[:, 0], atol=1e-8) and np.allclose(res_g[:, 2], res[:, 2])
+    assert (res_g[:, 1] < 0.01).all()                            # standard errors stay small

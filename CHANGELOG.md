@@ -16,7 +16,12 @@ sample of 21 November), where the columns are close to balanced and the raw
 indices agree with the adjusted ones of 1,024 runs. A stability table follows
 the screening at 0.05 and the ranking over the last two doublings, the
 adjustment table and figure compare 1,024 runs with the largest sizes, and
-the kNN table compares the two estimators at the same size.
+the kNN table compares the two estimators at the same size. The analysis also
+gives the uncertainty analysis of the outputs (moments, bimodality, spikes;
+figure of their distributions by diarist coverage), the mean, spread and
+shape parts of the OT index against the first-order index, and the
+first-order index, Shapley effect and total index of the surrogate for every
+factor, the appliance powers one by one.
 
 The console follows the publication rules as the exports do (`docs/PIPELINE.md`
 Section 3.18). Stage 10 pools the largest numbers of diarists into one class
