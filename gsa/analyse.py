@@ -31,8 +31,24 @@ it runs anywhere. In FOLDER:
                    estimator of Song et al. (2016), as shares of Var Y
   uniform.csv      the sample with powers uniform in W against the same 256
                    points of the main sample: output summaries and indices
-  summary.csv      each output: canonical value, median and 5th to 95th
-                   percentile over the runs
+  summary.csv      each output over the runs (the uncertainty analysis):
+                   canonical value and its percentile, median, 5th to 95th
+                   percentile, mean, SD, coefficient of variation, skewness,
+                   excess kurtosis, bimodality coefficient and the share of
+                   the runs at the most frequent value
+  ot_parts.csv     the adjusted first-order and OT indices on the full sample
+                   with the mean, spread and shape parts of the OT index and
+                   its value for a factor that only shifts a Gaussian output
+  brackets.csv     first-order index, Shapley effect and total index of the
+                   surrogate on independent points, the appliance powers one
+                   by one and as a group (S <= Sh <= T for independent inputs)
+  seeds.csv        with --reseed: total index of the redrawn seeds on every
+                   output from the reruns of gsa.reseed (Jansen's estimator),
+                   by variant, with a bootstrap interval
+  budget.csv       with --reseed and brackets.csv: the variance of every
+                   output split into first-order effects and interactions of
+                   the factors (surrogate), the seeds (model) and the error of
+                   the surrogate (by difference)
   profile_bands.npz  5th, 50th and 95th percentiles over the runs of the
                    profile of every country and day type
   hourly_ot.csv    OT index of every factor for the hourly values of the
@@ -94,18 +110,27 @@ def column_classes(X):
     return cls, K, off
 
 
-def indices_one_output(cls, K, off, W, y):
+def indices_one_output(cls, K, off, W, y, parts=False):
     """First-order index S_i and OT index iota_i of every column for one
     output y, from the classes of the columns (cls, n x J) with the runs of
     each class weighted by W[:, j] (weights adding up to the number of runs
     of the class; ones for the plain estimators). The squared W2 between a
     class and the whole sample is exact: int Q_c^2 + int Q^2 - 2 int Q_c Q,
     with int Q_c Q taken from the integral of the quantile function of the
-    sample, which is linear between the points i/n."""
+    sample, which is linear between the points i/n.
+
+    With parts=True, also the three parts of iota_i (3 x J), from
+    W2^2 = (m_c - m)^2 + (s_c - s)^2 + 2 s_c s (1 - r_c), where m and s are
+    the mean and standard deviation and r_c the correlation of the quantile
+    functions of the class and of the whole sample: the mean part (S_i / 2
+    for the plain estimator), the spread part and the shape part, each
+    averaged over the classes and divided by 2 Var Y. A factor that only
+    shifts a Gaussian output has no shape part and a spread part set by S_i,
+    so that iota_i = (S_i + (1 - sqrt(1 - S_i))^2) / 2."""
     n, J = cls.shape
     var = y.var()
     if var == 0:
-        return np.zeros(J), np.zeros(J)
+        return (np.zeros(J), np.zeros(J), np.zeros((3, J))) if parts else (np.zeros(J), np.zeros(J))
     y = y - y.mean()
     g = cls + off
     nK = int(K.sum())
@@ -119,6 +144,7 @@ def indices_one_output(cls, K, off, W, y):
     Gq = np.r_[0.0, np.cumsum(np.sort(y)) / n]
     M2 = float(np.mean(y ** 2))
     O = np.zeros(J)
+    P = np.zeros((3, J))
     for j in range(J):
         order = np.lexsort((y, cls[:, j]))
         c = cls[order, j]
@@ -136,7 +162,16 @@ def indices_one_output(cls, K, off, W, y):
                             minlength=K[j])
         m2 = np.bincount(c, weights=wn * ys ** 2, minlength=K[j])
         w2 = np.maximum(m2 + M2 - 2 * cross, 0.0)
-        O[j] = np.sum(share[off[j]:off[j] + K[j]] * w2) / (2 * var)
+        sh_j = share[off[j]:off[j] + K[j]]
+        O[j] = np.sum(sh_j * w2) / (2 * var)
+        if parts:
+            mu = means[off[j]:off[j] + K[j]]
+            sd_c = np.sqrt(np.maximum(m2 - mu ** 2, 0.0))
+            sd = np.sqrt(M2)
+            P[:, j] = [np.sum(sh_j * mu ** 2), np.sum(sh_j * (sd_c - sd) ** 2),
+                       np.sum(sh_j * 2 * (sd_c * sd - cross))]
+    if parts:
+        return S, O, P / (2 * var)
     return S, O
 
 
@@ -257,14 +292,17 @@ def leading_drivers(S_raw, names=COLUMNS, factors=FACTOR_IDS):
     return [list(f_idx[np.argsort(-S_raw[f_idx, o])][:N_DRIVERS + 1]) for o in range(S_raw.shape[1])]
 
 
-def adjusted_indices(X, Y, drivers):
+def adjusted_indices(X, Y, drivers, parts=False):
     """Class-based S_i and iota_i of every column of X for every output, the
     runs of each class reweighted by raking_weights on the leading drivers of
     the output (drivers[o], positions in X, the column under study set
     aside), so that each class carries the shares of the drivers that the
-    whole sample has. Returns S, OT and the imbalance left (columns x outputs)."""
+    whole sample has. Returns S, OT and the imbalance left (columns x
+    outputs), and with parts=True also the mean, spread and shape parts of
+    iota_i (3 x columns x outputs, see indices_one_output)."""
     n, m = Y.shape
     J = X.shape[1]
+    P = np.zeros((3, J, m))
     cls, K, off = column_classes(X)
     spec = {}
     for d in {d for ds in drivers for d in ds}:
@@ -282,10 +320,13 @@ def adjusted_indices(X, Y, drivers):
             if key not in cache:
                 cache[key] = raking_weights(cls[:, cols], [spec[d] for d in drv])
             W[:, cols], G[cols, o] = cache[key]
-        S[:, o], O[:, o] = indices_one_output(cls, K, off, W, Y[:, o])
+        if parts:
+            S[:, o], O[:, o], P[:, :, o] = indices_one_output(cls, K, off, W, Y[:, o], parts=True)
+        else:
+            S[:, o], O[:, o] = indices_one_output(cls, K, off, W, Y[:, o])
     if np.any(S / 2 > O + 1e-9):
         raise AssertionError("S_i / 2 > iota_i: estimator error")
-    return S, O, G
+    return (S, O, G, P) if parts else (S, O, G)
 
 
 def boot_adjusted_indices(X, Y, B, seed, drivers=None):
@@ -302,6 +343,29 @@ def boot_adjusted_indices(X, Y, B, seed, drivers=None):
         idx = rng.integers(0, n, n)
         reps[0, b], reps[1, b], _ = adjusted_indices(X[idx], Y[idx], drivers)
     return raw, (S, O), G, reps, drivers
+
+
+def savage_scores(x):
+    """Savage scores of the values x ranked from the largest: sum_{k=r}^n 1/k
+    for rank r, ties given the mean score of their ranks."""
+    x = np.asarray(x, dtype=float)
+    n = len(x)
+    tail = np.cumsum(1.0 / np.arange(n, 0, -1))[::-1]          # score of rank r = tail[r - 1]
+    order = np.argsort(-x, kind="stable")
+    sc = np.empty(n)
+    sc[order] = tail
+    for v in np.unique(x):                                       # ties: mean score
+        m = x == v
+        if m.sum() > 1:
+            sc[m] = sc[m].mean()
+    return sc
+
+
+def top_down_correlation(a, b):
+    """Top-down correlation of Iman and Conover (1987): the Pearson correlation
+    of the Savage scores of two rankings, which weighs agreement on the most
+    important factors most."""
+    return float(np.corrcoef(savage_scores(a), savage_scores(b))[0, 1])
 
 
 def adjusted_rank_difference(s0, s1):
@@ -470,18 +534,175 @@ def surrogate_indices(table, Y, B=0, n_perm=10000, n_perm_boot=1000, n_iid=2 ** 
     return pd.DataFrame(rows)
 
 
+def location_ot(S):
+    """OT index of a factor that only shifts a Gaussian output, as a function
+    of its first-order index: (S + (1 - sqrt(1 - S))^2) / 2."""
+    S = np.clip(np.asarray(S, dtype=float), 0.0, 1.0)
+    return (S + (1 - np.sqrt(1 - S)) ** 2) / 2
+
+
+def ot_parts(X, Y, drivers=None):
+    """The adjusted first-order and OT indices of every factor on the full
+    sample, with the mean, spread and shape parts of the OT index and its
+    value for a pure shift of a Gaussian output (location_ot)."""
+    if drivers is None:
+        drivers = leading_drivers(class_indices(X, Y)[0])
+    S, O, _, P = adjusted_indices(X, Y, drivers, parts=True)
+    rows = []
+    for o, y in enumerate(OUTPUTS):
+        for c in FACTOR_IDS:
+            j = COLUMNS.index(c)
+            rows.append({"output": y, "factor": c, "S": S[j, o], "OT": O[j, o], "mean": P[0, j, o],
+                         "spread": P[1, j, o], "shape": P[2, j, o],
+                         "location_OT": float(location_ot(S[j, o]))})
+    return pd.DataFrame(rows)
+
+
+def pick_freeze(f, A, B, groups):
+    """First-order (Saltelli et al. 2010) and total (Jansen 1999) variances of
+    f for each group of columns, from two independent samples A and B, with
+    their Monte Carlo standard errors: V_u = E[f(B) (f(A_B^u) - f(A))] and
+    VT_u = E[(f(A) - f(A_B^u))^2] / 2, where A_B^u is A with the columns of u
+    taken from B. The values of f are centred on their mean over A and B
+    first: this leaves V_u unbiased and keeps its variance from growing with
+    the square of the mean of f, which for an output such as Y2b (mean 4.9 h,
+    SD 0.13 h) would swamp the estimate."""
+    fA, fB = f(A), f(B)
+    f0 = float(np.mean(np.r_[fA, fB]))
+    fA, fB = fA - f0, fB - f0
+    n = len(A)
+    out = []
+    for cols in groups:
+        AB = A.copy()
+        AB[:, cols] = B[:, cols]
+        fAB = f(AB) - f0
+        a, t = fB * (fAB - fA), 0.5 * (fA - fAB) ** 2
+        out.append((a.mean(), a.std(ddof=1) / np.sqrt(n), t.mean(), t.std(ddof=1) / np.sqrt(n)))
+    return np.array(out)
+
+
+def surrogate_brackets(table, Y, n_perm=100000, batches=10, n_pf=2 ** 16, seed=0, outputs=OUTPUTS):
+    """For every output, the surrogate of surrogate_indices fitted to all the
+    runs and, on independent points, its first-order and total indices
+    (pick_freeze) of every feature one by one and of the six appliance powers
+    as a group (closed indices), and its Shapley effects in two games: every
+    feature a player, the powers one by one, and the powers as one player
+    (SURROGATE_PLAYERS). Each game takes `batches` independent runs of the
+    permutation estimator of Song et al. (2016) with n_perm / batches
+    permutations each, whose spread gives the Monte Carlo error. All as shares
+    of Var Y. For independent inputs S <= Sh <= T for every player, and the
+    sum of the Shapley effects of the powers one by one is at least the
+    effect of their group."""
+    X = table[SURROGATE_FEATURES].to_numpy(dtype=float)
+    pos = {c: i for i, c in enumerate(SURROGATE_FEATURES)}
+    single = [(c, [pos[c]]) for c in SURROGATE_FEATURES]
+    grouped = [(p, [pos[c] for c in cs]) for p, cs in SURROGATE_PLAYERS]
+    group_cols = dict(grouped)["P_appliances"]
+    rows = []
+    for o, y_name in enumerate(outputs):
+        y = Y[:, o]
+        var_y = y.var()
+        model = make_surrogate(seed).fit(X, y)
+        rng = np.random.default_rng(seed + 7)
+        A, B = independent_sample(n_pf, rng), independent_sample(n_pf, rng)
+        pf = pick_freeze(model.predict, A, B, [cols for _, cols in single] + [group_cols]) / var_y
+        pf_of = {name: pf[i] for i, (name, _) in enumerate(single)}
+        pf_of["P_appliances"] = pf[-1]
+        for game, players in (("single", single), ("grouped", grouped)):
+            reps, var_f = [], []
+            for b in range(batches):
+                sh, vf = est.song_shapley(model.predict, independent_sample, [cols for _, cols in players],
+                                          n_perm=n_perm // batches, seed=seed + 1000 * (game == "grouped") + b)
+                reps.append(sh * vf / var_y)
+                var_f.append(vf)
+            reps = np.array(reps)
+            for i, (name, _) in enumerate(players):
+                S_, S_se, T_, T_se = pf_of[name]
+                rows.append({"output": y_name, "game": game, "player": name,
+                             "shapley": reps[:, i].mean(), "shapley_se": reps[:, i].std(ddof=1) / np.sqrt(batches),
+                             "S": S_, "S_se": S_se, "T": T_, "T_se": T_se,
+                             "explained": float(np.mean(var_f) / var_y)})
+    return pd.DataFrame(rows)
+
+
+def seed_totals(table, reseeded, B=1000, seed=0):
+    """Total index of the redrawn seeds on every output by the estimator of
+    Jansen (1999), T = mean((y_i - y'_i)^2) / (2 Var Y), over the points of
+    `reseeded` (a gsa_outputs table of gsa.reseed, whose run is the index of
+    the base point), with Var Y over all the runs of `table`, a bootstrap
+    interval over the points, and the share of points whose output changed."""
+    base = table.set_index("run")
+    r = reseeded.set_index("run")
+    idx = r.index.intersection(base.index)
+    rng = np.random.default_rng(seed)
+    boots = rng.integers(0, len(idx), (B, len(idx)))
+    rows = []
+    for y in OUTPUTS:
+        var = table[y].astype(float).var(ddof=0)
+        d2 = (base.loc[idx, y].astype(float).to_numpy() - r.loc[idx, y].astype(float).to_numpy()) ** 2 / 2
+        T = float(d2.mean() / var) if var > 0 else 0.0
+        bt = d2[boots].mean(axis=1) / var if var > 0 else np.zeros(B)
+        lo, hi = np.percentile(bt, [2.5, 97.5])
+        rows.append({"output": y, "T": T, "lo": float(lo), "hi": float(hi), "points": len(idx),
+                     "changed": float(np.mean(d2 > 0))})
+    return pd.DataFrame(rows)
+
+
+def variance_budget(brackets, seeds, kmeans=None):
+    """Budget of the variance of every output: the first-order indices and
+    the interactions of the factors other than the seeds (the surrogate's
+    first-order indices and its Shapley effects, which add up to the share it
+    reproduces), the total index of the seeds on the model (gsa.reseed,
+    variant seeds), split into the K-means seed and the country multipliers
+    when the variant kmeans is given, and the error of the surrogate by
+    difference. A surrogate that reproduced E[Y | other factors] exactly
+    would reproduce 1 - T_seeds of the variance, so the parts add up to one."""
+    b = brackets[(brackets.game == "single") & (brackets.player != "D_cont")]
+    explained = brackets.groupby("output").explained.mean()
+    first = b.groupby("output").S.sum()
+    t = seeds.set_index("output")
+    k = kmeans.set_index("output") if kmeans is not None else None
+    rows = []
+    for y in OUTPUTS:
+        if y not in explained.index or y not in t.index:
+            continue
+        row = {"output": y, "first_order": float(first[y]),
+               "interactions": float(explained[y] - first[y]), "seeds": float(t.loc[y, "T"]),
+               "seeds_lo": float(t.loc[y, "lo"]), "seeds_hi": float(t.loc[y, "hi"])}
+        if k is not None:
+            row["kmeans"] = float(k.loc[y, "T"])
+            row["multipliers"] = row["seeds"] - row["kmeans"]
+        row["error"] = 1.0 - float(explained[y]) - row["seeds"]
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
 def summary(table, baseline):
-    """Each output over the runs, and the percentile of the canonical value
-    among them (share of runs below it, ties counted half)."""
+    """Each output over the runs (the uncertainty analysis), and the
+    percentile of the canonical value among them (share of runs below it,
+    ties counted half). Besides the mean, standard deviation and percentiles:
+    the coefficient of variation, the skewness and excess kurtosis (bias-
+    corrected), the bimodality coefficient of Pfister et al. (2013),
+    BC = (g^2 + 1) / (k + 3 (n - 1)^2 / ((n - 2)(n - 3))), above 5/9 for a
+    bimodal or strongly skewed distribution, and the share of the runs at the
+    most frequent value (a spike, such as the zeros of Y2)."""
+    from scipy.stats import kurtosis, skew
     rows = []
     for y in OUTPUTS:
         v = table[y].to_numpy(dtype=float)
+        n = len(v)
         c = float(baseline.get(y, np.nan))
+        g, k = float(skew(v, bias=False)), float(kurtosis(v, bias=False))
+        vals, cnt = np.unique(v, return_counts=True)
         rows.append({"output": y, "canonical": c,
                      "canonical_percentile": 100 * (np.mean(v < c) + 0.5 * np.mean(v == c))
                      if np.isfinite(c) else np.nan,
                      "median": np.median(v), "p05": np.percentile(v, 5), "p95": np.percentile(v, 95),
-                     "mean": v.mean(), "sd": v.std(ddof=1)})
+                     "mean": v.mean(), "sd": v.std(ddof=1),
+                     "min": v.min(), "max": v.max(), "cv": v.std(ddof=1) / abs(v.mean()),
+                     "skewness": g, "excess_kurtosis": k,
+                     "bimodality": (g ** 2 + 1) / (k + 3 * (n - 1) ** 2 / ((n - 2) * (n - 3))),
+                     "mode": vals[cnt.argmax()], "mode_share": cnt.max() / n})
     return pd.DataFrame(rows)
 
 
@@ -521,7 +742,8 @@ def hourly_ot(table, profiles, B, seed):
     return pd.DataFrame(rows)
 
 
-PARTS = ("summary", "dependence", "indices", "knn", "surrogate", "profiles", "uniform")
+PARTS = ("summary", "dependence", "indices", "knn", "surrogate", "profiles", "uniform", "otparts",
+         "brackets", "seeds")
 
 
 def load(share):
@@ -678,8 +900,30 @@ def part_uniform(table, uniform, out, B, n_perm, log):
     log("  uniform-in-watts comparison: done")
 
 
+def part_seeds(table, reseed, out, log):
+    """Total indices of the seeds from the reruns of gsa.reseed (the share
+    folders RESEED/seeds and, if present, RESEED/kmeans and RESEED/same), and
+    the variance budget with the surrogate's brackets.csv when it is in OUT."""
+    reseed = Path(reseed)
+    frames, totals = [], {}
+    for which in ("seeds", "kmeans", "same"):
+        f = reseed / which / "gsa_outputs.csv"
+        if f.is_file():
+            totals[which] = seed_totals(table, pd.read_csv(f))
+            frames.append(totals[which].assign(variant=which))
+    if not frames:
+        log(f"  no reruns in {reseed}")
+        return
+    pd.concat(frames).to_csv(out / "seeds.csv", index=False)
+    if "same" in totals and totals["same"]["T"].abs().max() > 0:
+        log("  WARNING: the reruns of variant same differ from the base runs")
+    if (out / "brackets.csv").is_file() and "seeds" in totals:
+        variance_budget(pd.read_csv(out / "brackets.csv"), totals["seeds"],
+                        totals.get("kmeans")).to_csv(out / "budget.csv", index=False)
+
+
 def run_all(share, out, uniform=None, B=500, sizes=SIZES, n_perm=10000, B_surrogate=50,
-            parts=PARTS, log=print):
+            parts=PARTS, log=print, reseed=None):
     share, out = Path(share), Path(out)
     out.mkdir(parents=True, exist_ok=True)
     table, X, Y = load(share)
@@ -701,6 +945,14 @@ def run_all(share, out, uniform=None, B=500, sizes=SIZES, n_perm=10000, B_surrog
         part_profiles(share, table, out, sizes[-1], min(B, 100), log)
     if "uniform" in parts and uniform is not None:
         part_uniform(table, uniform, out, min(B, 200), n_perm, log)
+    if "otparts" in parts:
+        ot_parts(X, Y).to_csv(out / "ot_parts.csv", index=False)
+    if "brackets" in parts:
+        t0 = time.time()
+        surrogate_brackets(table, Y, n_perm=10 * n_perm).to_csv(out / "brackets.csv", index=False)
+        log(f"  surrogate brackets: {time.time() - t0:.0f} s")
+    if "seeds" in parts and reseed is not None:
+        part_seeds(table, reseed, out, log)
     return out
 
 
@@ -708,6 +960,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--share", type=Path, required=True)
     parser.add_argument("--uniform", type=Path, default=None)
+    parser.add_argument("--reseed", type=Path, default=None,
+                        help="folder of the shares of gsa.reseed (subfolders seeds, kmeans, same)")
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--B", type=int, default=500)
     parser.add_argument("--sizes", default=",".join(map(str, SIZES)),
@@ -724,7 +978,7 @@ def main(argv=None):
     t0 = time.time()
     run_all(args.share, args.out, args.uniform, B=args.B,
             sizes=tuple(int(s) for s in args.sizes.split(",")), n_perm=args.n_perm,
-            B_surrogate=args.B_surrogate, parts=parts)
+            B_surrogate=args.B_surrogate, parts=parts, reseed=args.reseed)
     print(f"Done in {time.time() - t0:.0f} s; results in {args.out}")
 
 

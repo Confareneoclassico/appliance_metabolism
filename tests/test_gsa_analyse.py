@@ -115,3 +115,85 @@ def test_stability_counts_crossings_and_order():
     assert not top2 and not top5         # X3 overtakes X2
     same = stability_counts(a, a * 1.01)
     assert same == (0, 0, True, True, True)
+
+
+def test_ot_parts_add_up_and_mean_part_is_half_s():
+    rng = np.random.default_rng(3)
+    n = 4000
+    X = rng.random((n, 3))
+    y = X[:, 0] + 0.6 * (0.2 + X[:, 1]) * rng.normal(size=n)    # X0 shifts, X1 spreads
+    cls, K, off = an.column_classes(X)
+    S, O, P = an.indices_one_output(cls, K, off, np.ones((n, 3)), y, parts=True)
+    assert np.allclose(P.sum(axis=0), O)
+    assert np.allclose(P[0], S / 2)
+    assert (P >= -1e-12).all()
+    assert P[0, 0] > P[1, 0]                 # X0: mostly the mean part
+    assert P[1, 1] > 5 * P[0, 1]             # X1: mostly the spread part
+    assert O[1] > 2 * an.location_ot(S[1])   # far above the curve of a pure shift
+
+
+def test_location_ot_matches_a_gaussian_shift():
+    rng = np.random.default_rng(4)
+    n = 40000
+    x = rng.normal(size=n)
+    y = x + rng.normal(size=n)               # S = 1/2
+    cls, K, off = an.column_classes(x[:, None])
+    S, O = an.indices_one_output(cls, K, off, np.ones((n, 1)), y)
+    assert abs(S[0] - 0.5) < 0.02
+    assert abs(O[0] - an.location_ot(S[0])) < 0.01
+    assert abs(an.location_ot(1.0) - 1.0) < 1e-12 and an.location_ot(0.0) == 0.0
+
+
+def test_top_down_correlation():
+    a = np.array([0.5, 0.3, 0.1, 0.05, 0.0])
+    assert abs(an.top_down_correlation(a, a) - 1) < 1e-12
+    assert np.isclose(an.savage_scores(a).sum(), len(a))
+    swap_top = np.array([0.3, 0.5, 0.1, 0.05, 0.0])
+    swap_tail = np.array([0.5, 0.3, 0.1, 0.0, 0.05])
+    assert an.top_down_correlation(a, swap_tail) > an.top_down_correlation(a, swap_top)
+
+
+def test_pick_freeze_on_an_analytic_function():
+    rng = np.random.default_rng(5)
+    f = lambda Z: Z[:, 0] + 2 * Z[:, 1] + Z[:, 0] * Z[:, 2]      # noqa: E731, uniform inputs
+    A, B = rng.random((2 ** 17, 3)), rng.random((2 ** 17, 3))
+    res = an.pick_freeze(f, A, B, [[0], [1], [2], [0, 2]])
+    v0, v1, v2, v02 = 2.25 / 12, 4 / 12, 0.25 / 12, 1 / 144
+    var = v0 + v1 + v2 + v02
+    S = res[:, 0] / var
+    T = res[:, 2] / var
+    assert np.allclose(S, [v0 / var, v1 / var, v2 / var, (v0 + v2 + v02) / var], atol=0.015)
+    assert np.allclose(T, [(v0 + v02) / var, v1 / var, (v2 + v02) / var, (v0 + v2 + v02) / var], atol=0.015)
+    # an offset changes nothing (the values are centred before the products)
+    g = lambda Z: 100 + f(Z)                                     # noqa: E731
+    res_g = an.pick_freeze(g, A, B, [[0], [1], [2], [0, 2]])
+    assert np.allclose(res_g[:, 0], res[:, 0], atol=1e-8) and np.allclose(res_g[:, 2], res[:, 2])
+    assert (res_g[:, 1] < 0.01).all()                            # standard errors stay small
+
+
+def test_seed_totals_and_budget():
+    rng = np.random.default_rng(6)
+    n = 400
+    base = pd.DataFrame({"run": np.arange(n), **{y: rng.normal(size=n) for y in an.OUTPUTS}})
+    same = base.iloc[:100].copy()
+    T0 = an.seed_totals(base, same).set_index("output")
+    assert (T0["T"] == 0).all() and (T0["changed"] == 0).all()
+    moved = same.copy()
+    moved["Y1"] = moved["Y1"] + 1.0                       # (y - y')^2 / 2 = 1/2 at every point
+    T1 = an.seed_totals(base, moved).set_index("output")
+    assert np.isclose(T1.loc["Y1", "T"], 0.5 / base["Y1"].var(ddof=0))
+    assert T1.loc["Y1", "lo"] <= T1.loc["Y1", "T"] <= T1.loc["Y1", "hi"]
+    rows = []
+    for y in an.OUTPUTS:
+        for game in ("single", "grouped"):
+            rows += [{"output": y, "game": game, "player": "X1", "S": 0.4, "shapley": 0.5, "explained": 0.8},
+                     {"output": y, "game": game, "player": "X2", "S": 0.2, "shapley": 0.3, "explained": 0.8},
+                     {"output": y, "game": game, "player": "D_cont", "S": 0.0, "shapley": 0.0,
+                      "explained": 0.8}]
+    seeds = pd.DataFrame({"output": an.OUTPUTS, "T": 0.15, "lo": 0.1, "hi": 0.2})
+    kmeans = pd.DataFrame({"output": an.OUTPUTS, "T": 0.1, "lo": 0.05, "hi": 0.15})
+    b = an.variance_budget(pd.DataFrame(rows), seeds, kmeans).set_index("output")
+    parts = b[["first_order", "interactions", "kmeans", "multipliers", "error"]].sum(axis=1)
+    assert np.allclose(parts, 1.0)
+    assert np.allclose(b.first_order, 0.6) and np.allclose(b.interactions, 0.2)
+    assert np.allclose(b.error, 0.05) and np.allclose(b.multipliers, 0.05)
