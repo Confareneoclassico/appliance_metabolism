@@ -26,6 +26,7 @@ Writes one .tex file per table (booktabs, caption above the table):
   tab_ot_agreement.tex rankings of the OT and first-order indices compared
   tab_ot_excess.tex    the factors whose OT index exceeds that of a pure shift
                        of a Gaussian output, with the parts of the index
+  tab_budget.tex       variance budget of every output (needs budget.csv)
   tab_brackets.tex     first-order index, Shapley effect and total index of
                        the surrogate, the appliance powers one by one and as a
                        group (longtable)
@@ -431,6 +432,29 @@ def table_brackets(results, floor=0.05):
                 size="\\footnotesize")
 
 
+def table_budget(results):
+    d = pd.read_csv(results / "budget.csv").set_index("output")
+    split = "kmeans" in d.columns
+    head = ("\\toprule\nOutput & First-order & Interactions & "
+            + ("K-means & Country & " if split else "")
+            + "Seeds & Not \\\\\n & effects & & " + ("seed & multipliers & " if split else "")
+            + "together & reproduced \\\\\n\\midrule\n")
+    body = head
+    for y in [y for y in OUTPUTS if y in d.index]:
+        r = d.loc[y]
+        seeds = f"{num(r.seeds, 2)} ({num(r.seeds_lo, 2)} to {num(r.seeds_hi, 2)})"
+        body += (f"{y} {SHORT[y]} & {num(r.first_order, 2)} & {num(r.interactions, 2)} & "
+                 + (f"{num(r.kmeans, 2)} & {num(r.multipliers, 2)} & " if split else "")
+                 + f"{seeds} & {num(r.error, 2)} \\\\\n")
+    body += "\\bottomrule\n"
+    return wrap(body, "Variance budget of every output, as shares of Var Y. First-order effects and "
+                "interactions of the factors other than the seeds from the surrogate (the sum of its "
+                "first-order indices, and its Shapley effects less that sum), the total index of the seeds "
+                "on the model from the reruns with the seeds redrawn (Jansen's estimator, 95\\% bootstrap "
+                "interval), and what the surrogate does not reproduce by difference.", "tab:budget",
+                "lrr" + ("rr" if split else "") + "rr", size="\\footnotesize", fit=True)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--results", type=Path, required=True)
@@ -443,7 +467,7 @@ def main(argv=None):
                     ("uniform", table_uniform), ("knn", table_knn), ("adjustment", table_adjustment),
                     ("stability", table_stability), ("distributions", table_distributions),
                     ("ot_agreement", table_ot_agreement), ("ot_excess", table_ot_excess),
-                    ("brackets", table_brackets)):
+                    ("brackets", table_brackets), ("budget", table_budget)):
         try:
             (args.out / f"tab_{name}.tex").write_text(f(r))
         except (FileNotFoundError, KeyError, AttributeError) as e:

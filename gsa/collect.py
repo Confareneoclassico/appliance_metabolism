@@ -104,11 +104,17 @@ def collect(runs, out, check=None):
     lines = [f"Sample: scrambled Sobol' sequence, seed {settings['sample_seed']}, up to 2^{settings['m']} "
              f"points; powers {'uniform in W' if settings['uniform_in_watts'] else 'log-uniform'}; "
              f"K-means n_init {settings['n_init']}; bundle of {settings['household_days']:,} "
-             f"household-days built {settings['bundle_created']}",
-             f"Runs present: {n} ({ranges(idx.tolist())}); complete nested designs: "
-             f"{', '.join(map(str, nested)) or 'none'}",
-             f"Seconds per run: median {np.median(table['seconds']):.0f}, "
-             f"largest {np.max(table['seconds']):.0f}"]
+             f"household-days built {settings['bundle_created']}"]
+    if settings.get("reseed"):
+        redrawn = ", ".join(settings.get("redrawn") or []) or "nothing"
+        lines.append(f"Reruns of points of the sample (gsa.reseed, variant {settings['reseed']}): "
+                     f"{redrawn} redrawn, stream seed {settings.get('reseed_seed')}; the run index is "
+                     f"that of the point; points present: {n} ({ranges(idx.tolist())})")
+    else:
+        lines.append(f"Runs present: {n} ({ranges(idx.tolist())}); complete nested designs: "
+                     f"{', '.join(map(str, nested)) or 'none'}")
+    lines.append(f"Seconds per run: median {np.median(table['seconds']):.0f}, "
+                 f"largest {np.max(table['seconds']):.0f}")
     for y in OUTPUTS:
         v = pd.to_numeric(table[y], errors="coerce")
         lines.append(f"{y}: {int(v.isna().sum())} missing, range {v.min():.4g} to {v.max():.4g}")

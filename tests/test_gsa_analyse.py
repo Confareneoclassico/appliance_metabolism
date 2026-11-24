@@ -169,3 +169,31 @@ def test_pick_freeze_on_an_analytic_function():
     res_g = an.pick_freeze(g, A, B, [[0], [1], [2], [0, 2]])
     assert np.allclose(res_g[:, 0], res[:, 0], atol=1e-8) and np.allclose(res_g[:, 2], res[:, 2])
     assert (res_g[:, 1] < 0.01).all()                            # standard errors stay small
+
+
+def test_seed_totals_and_budget():
+    rng = np.random.default_rng(6)
+    n = 400
+    base = pd.DataFrame({"run": np.arange(n), **{y: rng.normal(size=n) for y in an.OUTPUTS}})
+    same = base.iloc[:100].copy()
+    T0 = an.seed_totals(base, same).set_index("output")
+    assert (T0["T"] == 0).all() and (T0["changed"] == 0).all()
+    moved = same.copy()
+    moved["Y1"] = moved["Y1"] + 1.0                       # (y - y')^2 / 2 = 1/2 at every point
+    T1 = an.seed_totals(base, moved).set_index("output")
+    assert np.isclose(T1.loc["Y1", "T"], 0.5 / base["Y1"].var(ddof=0))
+    assert T1.loc["Y1", "lo"] <= T1.loc["Y1", "T"] <= T1.loc["Y1", "hi"]
+    rows = []
+    for y in an.OUTPUTS:
+        for game in ("single", "grouped"):
+            rows += [{"output": y, "game": game, "player": "X1", "S": 0.4, "shapley": 0.5, "explained": 0.8},
+                     {"output": y, "game": game, "player": "X2", "S": 0.2, "shapley": 0.3, "explained": 0.8},
+                     {"output": y, "game": game, "player": "D_cont", "S": 0.0, "shapley": 0.0,
+                      "explained": 0.8}]
+    seeds = pd.DataFrame({"output": an.OUTPUTS, "T": 0.15, "lo": 0.1, "hi": 0.2})
+    kmeans = pd.DataFrame({"output": an.OUTPUTS, "T": 0.1, "lo": 0.05, "hi": 0.15})
+    b = an.variance_budget(pd.DataFrame(rows), seeds, kmeans).set_index("output")
+    parts = b[["first_order", "interactions", "kmeans", "multipliers", "error"]].sum(axis=1)
+    assert np.allclose(parts, 1.0)
+    assert np.allclose(b.first_order, 0.6) and np.allclose(b.interactions, 0.2)
+    assert np.allclose(b.error, 0.05) and np.allclose(b.multipliers, 0.05)

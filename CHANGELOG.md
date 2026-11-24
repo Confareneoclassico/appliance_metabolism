@@ -21,7 +21,10 @@ gives the uncertainty analysis of the outputs (moments, bimodality, spikes;
 figure of their distributions by diarist coverage), the mean, spread and
 shape parts of the OT index against the first-order index, and the
 first-order index, Shapley effect and total index of the surrogate for every
-factor, the appliance powers one by one.
+factor, the appliance powers one by one. `gsa.reseed` reruns points of the
+sample with the seeds redrawn, and the analysis turns the pairs of runs into
+the total index of the seeds on the model and a variance budget of every
+output (factors, seeds, error of the surrogate).
 
 The console follows the publication rules as the exports do (`docs/PIPELINE.md`
 Section 3.18). Stage 10 pools the largest numbers of diarists into one class

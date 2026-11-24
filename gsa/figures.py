@@ -32,6 +32,10 @@ Draws, as PDF:
   fig_ot_s.pdf         adjusted OT index against first-order index of every
                        factor and output, with the bound S/2 and the curve of
                        a pure shift of a Gaussian output (needs ot_parts.csv)
+  fig_budget.pdf       variance budget of every output: factors (first-order
+                       effects and interactions), seeds and the error of the
+                       surrogate (needs budget.csv, from the reruns of
+                       gsa.reseed)
   fig_brackets.pdf     first-order index, Shapley effect and total index of
                        the surrogate for the leading players of every output,
                        the appliance powers one by one, and the share of Var Y that the
@@ -580,6 +584,43 @@ def fig_brackets(br, out, floor=0.02, top=7):
     plt.close(fig)
 
 
+def fig_budget(budget, out):
+    """Variance budget of every output as a stacked bar: first-order effects
+    and interactions of the factors (surrogate), the K-means seed and the
+    country multipliers (reruns of the model), and the error of the surrogate
+    by difference (drawn as zero where it is negative, with its value)."""
+    YELLOW, MAGENTA = "#eda100", "#e87ba4"
+    parts = [("first_order", "First-order effects", BLUE), ("interactions", "Interactions", AQUA)]
+    if "kmeans" in budget.columns:
+        parts += [("kmeans", "K-means seed", YELLOW), ("multipliers", "Country multipliers", MAGENTA)]
+    else:
+        parts += [("seeds", "Seeds", YELLOW)]
+    parts += [("error", "Not reproduced by the surrogate", MUTED)]
+    b = budget.set_index("output").reindex([y for y in OUTPUTS if y in set(budget.output)])
+    fig, ax = plt.subplots(figsize=(7.0, 4.2))
+    ypos = np.arange(len(b))[::-1]
+    left = np.zeros(len(b))
+    for col, name, colour in parts:
+        v = np.clip(b[col].to_numpy(dtype=float), 0, None)
+        ax.barh(ypos, v, left=left, color=colour, edgecolor=SURFACE, linewidth=1.0, height=0.7, label=name)
+        left += v
+    for yp, e in zip(ypos, b["error"].to_numpy(dtype=float)):
+        if e < 0:
+            ax.annotate(f"error {e:.2f}", (1.0, yp), xytext=(4, 0), textcoords="offset points",
+                        va="center", fontsize=5.5, color=TEXT2)
+    ax.set_yticks(ypos)
+    ax.set_yticklabels([SHORT_OUTPUT[y] for y in b.index])
+    ax.set_xlim(0, 1.12)
+    ax.set_xticks(np.linspace(0, 1, 6))
+    ax.set_xlabel("Share of Var Y")
+    ax.grid(axis="x")
+    ax.set_axisbelow(True)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.45, 1.13), ncol=len(parts), fontsize=6, frameon=False)
+    fig.tight_layout()
+    fig.savefig(out / "fig_budget.pdf")
+    plt.close(fig)
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--results", type=Path, required=True)
@@ -599,6 +640,8 @@ def main(argv=None):
         fig_ot_s(pd.read_csv(r / "ot_parts.csv"), args.out)
     if (r / "brackets.csv").is_file():
         fig_brackets(pd.read_csv(r / "brackets.csv"), args.out)
+    if (r / "budget.csv").is_file():
+        fig_budget(pd.read_csv(r / "budget.csv"), args.out)
     ind = pd.read_csv(r / "indices.csv")
     sur = pd.read_csv(r / "surrogate.csv")
     fig_effects(sur, args.out)

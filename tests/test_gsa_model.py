@@ -351,3 +351,43 @@ def test_runner_resume_and_collect(synthetic_run, capsys, monkeypatch):
     assert len(shared) == 4 and (base / "share" / "manifest.txt").is_file()
     manifest = (base / "share" / "manifest.txt").read_text()
     assert "in 4 runs" in manifest and "WARNING" not in manifest
+
+
+def test_reseed_reruns(synthetic_run, capsys, monkeypatch):
+    from gsa import reseed, analyse
+    base = synthetic_run[0]
+    runs = base / "runs"
+    gsa_run.main(["--bundle", str(base / "bundle"), "--runs", str(runs), "--m", "2", "--n-init", "3"])
+    out = base / "reseed"
+    common = ["--bundle", str(base / "bundle"), "--base", str(runs), "--out", str(out)]
+    reseed.main(common + ["--which", "same", "--list", "0,1"])
+    assert "Reruns identical to the base runs" in capsys.readouterr().out
+    reseed.main(common + ["--which", "kmeans", "--points", "2"])
+    reseed.main(common + ["--which", "seeds", "--points", "2"])
+    reseed.main(common + ["--which", "kmeans", "--points", "2"])
+    assert "2 of 2 points already done" in capsys.readouterr().out
+    cols = {c: design.COLUMNS.index(c) for c in ("X8", "X21")}
+    for which, redrawn in (("kmeans", {"X21"}), ("seeds", {"X8", "X21"})):
+        for i in (0, 1):
+            a = np.array(json.loads((runs / f"run_{i:05d}.json").read_text())["coordinates"])
+            b = np.array(json.loads((out / which / f"run_{i:05d}.json").read_text())["coordinates"])
+            changed = {c for c in design.COLUMNS if a[design.COLUMNS.index(c)] != b[design.COLUMNS.index(c)]}
+            assert changed == redrawn, (which, i, changed)
+            assert all(b[j] != a[j] for c, j in cols.items() if c in redrawn)
+    real = gsa_run.library_versions()
+    with monkeypatch.context() as mp:                     # another scikit-learn: refused
+        mp.setattr(gsa_run, "library_versions", lambda: {**real, "scikit-learn": "0.0"})
+        with pytest.raises(SystemExit):
+            reseed.main(common + ["--which", "seeds", "--points", "2"])
+    with pytest.raises(SystemExit):                       # a point outside the sample
+        reseed.main(common + ["--which", "seeds", "--list", "7"])
+    table = collect.collect(runs, base / "share_base")[0]
+    totals = {}
+    for which in ("same", "kmeans", "seeds"):
+        t, _ = collect.collect(out / which, base / "reseed_share" / which)
+        assert list(t["run"]) == ([0, 1] if which != "same" else [0, 1])
+        assert "Reruns of points of the sample" in (base / "reseed_share" / which / "manifest.txt").read_text()
+        totals[which] = analyse.seed_totals(table, t).set_index("output")
+    assert (totals["same"]["T"] == 0).all()               # the model is deterministic
+    profile_outputs = ["Y3", "Y4", "Y7", "Y9", "Y10", "Y11"]   # no clustering in them
+    assert (totals["kmeans"].loc[profile_outputs, "T"] == 0).all()

@@ -42,6 +42,13 @@ it runs anywhere. In FOLDER:
   brackets.csv     first-order index, Shapley effect and total index of the
                    surrogate on independent points, the appliance powers one
                    by one and as a group (S <= Sh <= T for independent inputs)
+  seeds.csv        with --reseed: total index of the redrawn seeds on every
+                   output from the reruns of gsa.reseed (Jansen's estimator),
+                   by variant, with a bootstrap interval
+  budget.csv       with --reseed and brackets.csv: the variance of every
+                   output split into first-order effects and interactions of
+                   the factors (surrogate), the seeds (model) and the error of
+                   the surrogate (by difference)
   profile_bands.npz  5th, 50th and 95th percentiles over the runs of the
                    profile of every country and day type
   hourly_ot.csv    OT index of every factor for the hourly values of the
@@ -618,6 +625,58 @@ def surrogate_brackets(table, Y, n_perm=100000, batches=10, n_pf=2 ** 16, seed=0
     return pd.DataFrame(rows)
 
 
+def seed_totals(table, reseeded, B=1000, seed=0):
+    """Total index of the redrawn seeds on every output by the estimator of
+    Jansen (1999), T = mean((y_i - y'_i)^2) / (2 Var Y), over the points of
+    `reseeded` (a gsa_outputs table of gsa.reseed, whose run is the index of
+    the base point), with Var Y over all the runs of `table`, a bootstrap
+    interval over the points, and the share of points whose output changed."""
+    base = table.set_index("run")
+    r = reseeded.set_index("run")
+    idx = r.index.intersection(base.index)
+    rng = np.random.default_rng(seed)
+    boots = rng.integers(0, len(idx), (B, len(idx)))
+    rows = []
+    for y in OUTPUTS:
+        var = table[y].astype(float).var(ddof=0)
+        d2 = (base.loc[idx, y].astype(float).to_numpy() - r.loc[idx, y].astype(float).to_numpy()) ** 2 / 2
+        T = float(d2.mean() / var) if var > 0 else 0.0
+        bt = d2[boots].mean(axis=1) / var if var > 0 else np.zeros(B)
+        lo, hi = np.percentile(bt, [2.5, 97.5])
+        rows.append({"output": y, "T": T, "lo": float(lo), "hi": float(hi), "points": len(idx),
+                     "changed": float(np.mean(d2 > 0))})
+    return pd.DataFrame(rows)
+
+
+def variance_budget(brackets, seeds, kmeans=None):
+    """Budget of the variance of every output: the first-order indices and
+    the interactions of the factors other than the seeds (the surrogate's
+    first-order indices and its Shapley effects, which add up to the share it
+    reproduces), the total index of the seeds on the model (gsa.reseed,
+    variant seeds), split into the K-means seed and the country multipliers
+    when the variant kmeans is given, and the error of the surrogate by
+    difference. A surrogate that reproduced E[Y | other factors] exactly
+    would reproduce 1 - T_seeds of the variance, so the parts add up to one."""
+    b = brackets[(brackets.game == "single") & (brackets.player != "D_cont")]
+    explained = brackets.groupby("output").explained.mean()
+    first = b.groupby("output").S.sum()
+    t = seeds.set_index("output")
+    k = kmeans.set_index("output") if kmeans is not None else None
+    rows = []
+    for y in OUTPUTS:
+        if y not in explained.index or y not in t.index:
+            continue
+        row = {"output": y, "first_order": float(first[y]),
+               "interactions": float(explained[y] - first[y]), "seeds": float(t.loc[y, "T"]),
+               "seeds_lo": float(t.loc[y, "lo"]), "seeds_hi": float(t.loc[y, "hi"])}
+        if k is not None:
+            row["kmeans"] = float(k.loc[y, "T"])
+            row["multipliers"] = row["seeds"] - row["kmeans"]
+        row["error"] = 1.0 - float(explained[y]) - row["seeds"]
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
 def summary(table, baseline):
     """Each output over the runs (the uncertainty analysis), and the
     percentile of the canonical value among them (share of runs below it,
@@ -684,7 +743,7 @@ def hourly_ot(table, profiles, B, seed):
 
 
 PARTS = ("summary", "dependence", "indices", "knn", "surrogate", "profiles", "uniform", "otparts",
-         "brackets")
+         "brackets", "seeds")
 
 
 def load(share):
@@ -841,8 +900,30 @@ def part_uniform(table, uniform, out, B, n_perm, log):
     log("  uniform-in-watts comparison: done")
 
 
+def part_seeds(table, reseed, out, log):
+    """Total indices of the seeds from the reruns of gsa.reseed (the share
+    folders RESEED/seeds and, if present, RESEED/kmeans and RESEED/same), and
+    the variance budget with the surrogate's brackets.csv when it is in OUT."""
+    reseed = Path(reseed)
+    frames, totals = [], {}
+    for which in ("seeds", "kmeans", "same"):
+        f = reseed / which / "gsa_outputs.csv"
+        if f.is_file():
+            totals[which] = seed_totals(table, pd.read_csv(f))
+            frames.append(totals[which].assign(variant=which))
+    if not frames:
+        log(f"  no reruns in {reseed}")
+        return
+    pd.concat(frames).to_csv(out / "seeds.csv", index=False)
+    if "same" in totals and totals["same"]["T"].abs().max() > 0:
+        log("  WARNING: the reruns of variant same differ from the base runs")
+    if (out / "brackets.csv").is_file() and "seeds" in totals:
+        variance_budget(pd.read_csv(out / "brackets.csv"), totals["seeds"],
+                        totals.get("kmeans")).to_csv(out / "budget.csv", index=False)
+
+
 def run_all(share, out, uniform=None, B=500, sizes=SIZES, n_perm=10000, B_surrogate=50,
-            parts=PARTS, log=print):
+            parts=PARTS, log=print, reseed=None):
     share, out = Path(share), Path(out)
     out.mkdir(parents=True, exist_ok=True)
     table, X, Y = load(share)
@@ -870,6 +951,8 @@ def run_all(share, out, uniform=None, B=500, sizes=SIZES, n_perm=10000, B_surrog
         t0 = time.time()
         surrogate_brackets(table, Y, n_perm=10 * n_perm).to_csv(out / "brackets.csv", index=False)
         log(f"  surrogate brackets: {time.time() - t0:.0f} s")
+    if "seeds" in parts and reseed is not None:
+        part_seeds(table, reseed, out, log)
     return out
 
 
@@ -877,6 +960,8 @@ def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--share", type=Path, required=True)
     parser.add_argument("--uniform", type=Path, default=None)
+    parser.add_argument("--reseed", type=Path, default=None,
+                        help="folder of the shares of gsa.reseed (subfolders seeds, kmeans, same)")
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--B", type=int, default=500)
     parser.add_argument("--sizes", default=",".join(map(str, SIZES)),
@@ -893,7 +978,7 @@ def main(argv=None):
     t0 = time.time()
     run_all(args.share, args.out, args.uniform, B=args.B,
             sizes=tuple(int(s) for s in args.sizes.split(",")), n_perm=args.n_perm,
-            B_surrogate=args.B_surrogate, parts=parts)
+            B_surrogate=args.B_surrogate, parts=parts, reseed=args.reseed)
     print(f"Done in {time.time() - t0:.0f} s; results in {args.out}")
 
 

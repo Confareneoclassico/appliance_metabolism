@@ -48,6 +48,19 @@ python3 -m gsa.run --bundle ~/hetus_gsa/bundle --runs ~/hetus_gsa/runs_uniform -
 # 5. The files that can be shared, in ~/hetus_gsa/share/ and share_uniform/
 python3 -m gsa.collect --runs ~/hetus_gsa/runs
 python3 -m gsa.collect --runs ~/hetus_gsa/runs_uniform --out ~/hetus_gsa/share_uniform
+
+# 6. The seeds: the first 256 points again with both seeds redrawn, and with
+#    the K-means seed alone redrawn, after three points rerun unchanged (the
+#    check that the model gives the same outputs); then their shares
+python3 -m gsa.reseed --bundle ~/hetus_gsa/bundle --base ~/hetus_gsa/runs --out ~/hetus_gsa/reseed \
+    --which same --list 0,1,2409 --workers 3 --threads 2
+python3 -m gsa.reseed --bundle ~/hetus_gsa/bundle --base ~/hetus_gsa/runs --out ~/hetus_gsa/reseed \
+    --which seeds --points 256 --workers 4 --threads 2
+python3 -m gsa.reseed --bundle ~/hetus_gsa/bundle --base ~/hetus_gsa/runs --out ~/hetus_gsa/reseed \
+    --which kmeans --points 256 --workers 4 --threads 2
+for v in same seeds kmeans; do
+    python3 -m gsa.collect --runs ~/hetus_gsa/reseed/$v --out ~/hetus_gsa/reseed_share/$v
+done
 ```
 
 `gsa.bundle` takes its locations from `pipeline/paths.py`, so the same
@@ -64,6 +77,15 @@ SciPy and scikit-learn, since other versions can give other partitions), and
 environment. A folder begun before the versions were kept takes those of the
 next call, so that call must be made in the environment of the earlier runs. A run that fails leaves its traceback in
 `run_iiiii.error` and is made again by the next call.
+`gsa.reseed` reruns points of the sample with the seed of the country
+multipliers (X8) and the seed of K-means (X21) redrawn (variant `seeds`), the
+K-means seed alone (`kmeans`), or nothing (`same`), each point from a stream
+of its own, so that its new seeds do not depend on which other points are run.
+It takes the settings of the base folder and refuses another bundle or
+another environment, and its files are those of `gsa.run`, under one subfolder
+per variant, so that an interrupted variant resumes and `gsa.collect` gathers
+it. The total index of the seeds follows from the pairs of runs by Jansen's
+estimator (Section 8).
 
 ## 2. The inputs (gsa/bundle.py)
 
@@ -336,3 +358,18 @@ Monte Carlo error. For independent inputs S <= Sh <= T for every player (Owen
 2014), and the sum of the Shapley effects of the powers one by one is at
 least the effect of their group, with equality when no interaction joins two
 powers and another factor.
+
+**The seeds and the variance budget.** The two seeds carry no order that an
+estimator or a surrogate could use, so their share of the variance stays out
+of the Shapley effects of the surrogate. `gsa.reseed` reruns points with the
+seeds redrawn, and `gsa.analyse --reseed` (part `seeds`) gives the total
+index of the seeds on the model by Jansen's estimator, T = mean((y - y')^2) /
+(2 Var Y), with a bootstrap interval over the points (`seeds.csv`). A
+surrogate that reproduced E[Y | other factors] exactly would reproduce
+1 - T of the variance, so the variance of every output splits into the
+first-order effects and interactions of the factors (surrogate), the K-means
+seed and the country multipliers (reruns), and the error of the surrogate by
+difference (`budget.csv`, `fig_budget.pdf`, `tab_budget.tex`). The variant
+`same` checks that the model is deterministic, and the outputs that no
+clustering enters (Y3, Y4, Y7, Y9, Y10, Y11) do not move when only the
+K-means seed is redrawn.
