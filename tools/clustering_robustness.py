@@ -20,8 +20,9 @@ the two checks the reviewer also asks for:
   household-days, each against the K-means partition (adjusted Rand index),
   with its silhouette width.
 
-    python3 tools/clustering_robustness.py [--processed FOLDER] [--reps 10]
-                                           [--skip-methods] [--skip-strata]
+    python3 tools/clustering_robustness.py [--processed FOLDER | --bundle BUNDLE]
+                                           [--reps 10] [--skip-methods]
+                                           [--skip-strata]
 
 It reads the *_clustering_results.csv files of Stages 05 and 06 (the power
 profiles and the cluster of every household-day) from the processed folder
@@ -46,8 +47,10 @@ from sklearn.preprocessing import StandardScaler
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "pipeline"))
+sys.path.insert(0, str(ROOT / "tools"))
 
 from disclosure import MIN_N_UNFLAGGED  # noqa: E402
+from run_folder import check, describe, resolve, stop  # noqa: E402
 
 ENERGY = [f"Household_Energy_W_{t}" for t in range(144)]
 PCA_VARIANCE = float(os.environ.get("HETUS_PCA_VARIANCE", "0.95"))
@@ -75,7 +78,8 @@ def half_sample_stability(Z, labels, reps=10, seed=42):
             in_c = full == c
             if in_c.any():
                 jac[b, c] = max(np.sum(in_c & (new == m)) / np.sum(in_c | (new == m)) for m in range(k))
-    jm = np.nanmean(jac, axis=0)
+    seen = ~np.all(np.isnan(jac), axis=0)          # clusters present in some half-sample
+    jm = np.nanmean(jac[:, seen], axis=0) if seen.any() else np.array([np.nan])
     return {"silhouette": float(sil), "ari_mean": float(np.mean(aris)), "ari_min": float(np.min(aris)),
             "share_stable_clusters": float(np.mean(jm >= 0.75)),
             "share_dissolved_clusters": float(np.mean(jm < 0.5))}
@@ -114,13 +118,17 @@ def solution_files(processed):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--processed", type=Path, default=None)
+    parser.add_argument("--processed", type=Path, default=None,
+                        help="processed folder of the run (default: that of pipeline/paths.py)")
+    parser.add_argument("--bundle", type=Path, default=None,
+                        help="bundle of the sensitivity analysis whose run to use (its meta.json)")
     parser.add_argument("--reps", type=int, default=10)
     parser.add_argument("--skip-methods", action="store_true")
     parser.add_argument("--skip-strata", action="store_true")
     args = parser.parse_args()
-    from paths import PROCESSED_DIR
-    processed = Path(args.processed or PROCESSED_DIR)
+    processed = resolve(args.processed, args.bundle)
+    check(processed)
+    print(describe(processed))
     rows = []
     glob_file = processed / "clustering_results.csv"
     if not args.skip_methods and glob_file.is_file():
@@ -144,6 +152,8 @@ def main():
                          "k": int(labels.max()) + 1, **st})
             print(f"{f.name}: K {labels.max() + 1}, ARI {st['ari_mean']:.3f} (min {st['ari_min']:.3f}), "
                   f"silhouette {st['silhouette']:.3f}")
+    if not rows:
+        stop("No solution was large enough to assess, so nothing was written.")
     out = pd.DataFrame(rows)
     out.to_csv(processed / "clustering_robustness.csv", index=False)
     print(f"Written to {processed / 'clustering_robustness.csv'}")

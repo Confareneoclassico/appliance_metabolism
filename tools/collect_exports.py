@@ -8,6 +8,7 @@ shared, and writes a manifest of what was copied and what was not. A table
 that fails a test, or a file that is missing, is not copied.
 
     python3 tools/collect_exports.py [--out FOLDER] [--log RUN_LOG [RUN_LOG ...]]
+                                     [--checks]
 
 The folder defaults to exports_for_sharing/ at the root of the repository
 (ignored by git). The tables are read from the folders of pipeline/paths.py,
@@ -15,7 +16,9 @@ so the same HETUS_* settings as for the run apply. With --log, the lines of
 the saved console logs (several for a run made in parts) that hold only
 solution-level figures (PCA, WCSS, the number of clusters and how it was
 chosen, stability) are written to log_extract.txt; read it before sharing it.
-The logs themselves are working files and are not copied.
+The logs themselves are working files and are not copied. With --checks, only
+the results of the checks for the reviewers are collected (the files of
+OPTIONAL), and any of them that is absent is listed as missing.
 """
 import argparse
 import re
@@ -105,27 +108,37 @@ def problems(table, size_cols, profile_test):
     return found
 
 
-def collect(out, log=None):
+def collect(out, log=None, checks=False):
     out.mkdir(parents=True, exist_ok=True)
     manifest = []
     for folder, name, size_cols, profile_test in EXPORTS:
+        if checks and name not in OPTIONAL:
+            continue
         src = Path(folder) / name
         if not src.is_file():
-            if name not in OPTIONAL:
+            if name not in OPTIONAL or checks:
                 manifest.append(f"MISSING  {name}")
             continue
-        found = problems(pd.read_csv(src), size_cols, profile_test)
+        try:
+            table = pd.read_csv(src)
+        except (pd.errors.EmptyDataError, pd.errors.ParserError) as e:
+            manifest.append(f"REFUSED  {name}: empty or unreadable file ({type(e).__name__}); "
+                            "rerun the script that writes it")
+            continue
+        found = problems(table, size_cols, profile_test)
         if found:
             manifest.append(f"REFUSED  {name}: " + "; ".join(found))
             continue
         shutil.copy2(src, out / name)
         manifest.append(f"copied   {name}")
     for folder, name in FIGURES:
+        if checks and name not in OPTIONAL:
+            continue
         src = Path(folder) / name
         if src.is_file():
             shutil.copy2(src, out / name)
             manifest.append(f"copied   {name}")
-        elif name not in OPTIONAL:
+        elif name not in OPTIONAL or checks:
             manifest.append(f"MISSING  {name}")
     logs = [] if not log else ([log] if isinstance(log, (str, Path)) else list(log))
     if logs:
@@ -153,8 +166,10 @@ def main():
     parser.add_argument("--out", type=Path, default=ROOT / "exports_for_sharing")
     parser.add_argument("--log", type=Path, nargs="+", default=None,
                         help="saved console logs of the run (several for a run made in parts)")
+    parser.add_argument("--checks", action="store_true",
+                        help="collect only the results of the checks for the reviewers")
     args = parser.parse_args()
-    manifest = collect(args.out, args.log)
+    manifest = collect(args.out, args.log, checks=args.checks)
     print("\n".join(manifest))
     if nothing_found(manifest):
         print(f"\nNone of the tables was found in {PROCESSED_DIR}. Set HETUS_PROCESSED_DIR "

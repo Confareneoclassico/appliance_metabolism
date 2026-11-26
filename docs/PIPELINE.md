@@ -654,18 +654,36 @@ and the half-sample stability of Stage 05 for every stratified solution, and
 compares the global K-means partition with a Gaussian mixture, K-means without
 PCA and Ward's clustering on a subsample (`clustering_robustness.csv`).
 
-Run after Stages 01 to 07, with the same HETUS_* settings:
+Run after Stages 01 to 07, in one command that finds the processed folder of
+the run, stops unless it holds the solutions of Stages 05 and 06, runs the four
+checks and collects their results (only these) for sharing:
 
 ```bash
-python3 tools/paired_day_types.py
-python3 tools/paired_day_types.py --day-type ddv1
-python3 tools/driver_robustness.py --files all
-python3 tools/clustering_robustness.py
-python3 tools/collect_exports.py --out exports_checks
+python3 tools/reviewer_checks.py --bundle ~/hetus_gsa/bundle   # the run the bundle was built from
+python3 tools/reviewer_checks.py --processed "/path/to/processed" --out exports_checks
 ```
 
+Each script also runs on its own with `--processed FOLDER` or `--bundle BUNDLE`
+(else the folder of `pipeline/paths.py`), and `tools/collect_exports.py --checks`
+collects their results only. Corrections of 26 November 2026, after the first
+run on the microdata: a processed folder without the solutions stopped
+`driver_robustness.py` with an error of pandas and let
+`clustering_robustness.py` write an empty table, on which the collector failed;
+the scripts now stop with a message saying what is missing and write nothing,
+and the collector refuses an empty or unreadable table. On a complete run the
+country files of Stage 06 could not be matched, because
+`household_interval_timeseries.csv` codes the countries (Stage 01) while the
+files name them (Stage 06), and the paired comparison labelled its countries
+by code; both now use the names of `pipeline/countries.py`. The paired table
+keeps all its columns when no country has 50 paired households (its printout
+failed then). `run_folder.py` holds the shared lookup and checks of the
+processed folder.
+
 Tests: `test_paired_day_types.py`, `test_driver_robustness.py`,
-`test_clustering_robustness.py`, on synthetic data with known answers.
+`test_clustering_robustness.py`, on synthetic data with known answers, and
+`test_reviewer_checks.py`, which runs Stages 01 to 07 on synthetic raw files in
+which most households keep a weekday and a weekend diary, then the one command
+as a user runs it, and the stops on an incomplete folder.
 
 ## 4. Design choices that constrain interpretation
 
