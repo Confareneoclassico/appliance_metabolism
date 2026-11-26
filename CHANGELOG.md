@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+Checks for the reviewers: `tools/paired_day_types.py` (working and
+non-working days of the same households), `tools/driver_robustness.py`
+(Cramer's V corrected for bias, households resampled, one day per household,
+missing answers as a category, the number of adults within each number of
+diarists) and `tools/clustering_robustness.py` (stability of the stratified
+solutions, other clustering methods), each with tests on synthetic data and
+picked up by `tools/collect_exports.py` (docs/PIPELINE.md Section 3.19).
+`gsa.validation` gives the agreement with the measured profiles in the
+metrics of the reviewers (correlation, error in the hour of the peak,
+normalised RMSE) and the bands of daily energy and coincident peak by country.
+The convergence figures show every factor (square-root scale, the influential
+ones labelled), for the total, first-order and OT indices, and the variance
+budget separates the part of the factors (one less the total index of the
+seeds) into what the surrogate attributes and what it does not.
+
 `gsa/analyse.py`, `gsa/figures.py` and `gsa/tables.py` compute, draw and
 tabulate the sensitivity analysis from the shared files (`docs/GSA.md`
 Section 8). The Sobol' columns turned out to be dependent at the scale of the
