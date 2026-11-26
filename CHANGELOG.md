@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Changed (26 November 2026, variance budget from the model alone)
+
+- `gsa.analyse` part `seeds`: the variance budget splits on the model itself into the
+  first-order effects of the factors (`first_order_sums`: class-based first-order indices of the
+  runs less the floor measured on the dummies), their interactions by difference and the seeds
+  (reruns), which add up to one; the surrogate's first-order sum and interactions are reported
+  beside them with the share of the interactions it apportions (`budget.csv`, new
+  `first_order_sums.csv`). New `totals_check.csv`: total indices of the surrogate against the
+  bounds S_i <= T_i <= S_i + I. `tab_budget`, `fig_budget` and `tab_totals` (column S_i + I)
+  follow. Before, the budget took the first-order effects and interactions from the surrogate and
+  left its shortfall as an error term.
+
 ### Fixed (26 November 2026, checks for the reviewers)
 
 - `tools/driver_robustness.py` matched no country solution of Stage 06 on a real run (the

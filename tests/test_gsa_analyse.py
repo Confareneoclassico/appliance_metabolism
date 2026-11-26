@@ -192,11 +192,60 @@ def test_seed_totals_and_budget():
                       "explained": 0.8}]
     seeds = pd.DataFrame({"output": an.OUTPUTS, "T": 0.15, "lo": 0.1, "hi": 0.2})
     kmeans = pd.DataFrame({"output": an.OUTPUTS, "T": 0.1, "lo": 0.05, "hi": 0.15})
-    b = an.variance_budget(pd.DataFrame(rows), seeds, kmeans).set_index("output")
-    parts = b[["first_order", "interactions", "kmeans", "multipliers", "error"]].sum(axis=1)
+    first = pd.DataFrame({"output": an.OUTPUTS, "first_order_raw": 0.56, "floor": 0.01,
+                          "first_order_runs": 0.55, "leak_bound": 0.005, "first_order_se": 0.02})
+    b = an.variance_budget(pd.DataFrame(rows), seeds, kmeans, first).set_index("output")
+    # from the model alone the parts add up to one
+    parts = b[["first_order_runs", "interactions_runs", "kmeans", "multipliers"]].sum(axis=1)
     assert np.allclose(parts, 1.0)
-    assert np.allclose(b.first_order, 0.6) and np.allclose(b.interactions, 0.2)
-    assert np.allclose(b.error, 0.05) and np.allclose(b.multipliers, 0.05)
+    assert np.allclose(b.interactions_runs, 0.30) and np.allclose(b.multipliers, 0.05)
+    se = np.hypot(0.02, 0.1 / (2 * 1.96))
+    assert np.allclose(b.interactions_hi - b.interactions_lo, 2 * 1.96 * se)
+    # what the surrogate reproduces, and the rest split into its two parts
+    assert np.allclose(b.surrogate_first_order, 0.6) and np.allclose(b.surrogate_interactions, 0.2)
+    assert np.allclose(b.surrogate_share, 0.2 / 0.3) and np.allclose(b.not_attributed, 0.05)
+    assert np.allclose(b.first_order_compressed + b.interactions_not_apportioned, b.not_attributed)
+    # without the surrogate's brackets the budget still closes
+    b0 = an.variance_budget(pd.DataFrame(columns=["output", "game", "player", "S", "explained"]),
+                            seeds, kmeans, first).set_index("output")
+    assert np.allclose(b0[["first_order_runs", "interactions_runs", "seeds"]].sum(axis=1), 1.0)
+    assert "surrogate_share" not in b0.columns
+
+
+def test_first_order_sums_on_known_models():
+    """On independent points: z1 + z2 + z1 z2 has first-order effects 2/3 and
+    interactions 1/3, z1 + z2 first-order effects 1; the floor of the
+    estimator, which the dummies measure, is about (K - 1)/n per factor."""
+    rng = np.random.default_rng(3)
+    n = 4096
+    X = an.design.analysis_matrix(rng.random((n, len(an.COLUMNS))))
+    z = [np.sqrt(3) * (2 * (np.argsort(np.argsort(X[:, j])) + 0.5) / n - 1) for j in (0, 1)]
+    Y = np.column_stack([z[0] + z[1] + z[0] * z[1], z[0] + z[1]])
+    f = an.first_order_sums(X, Y, B=40, outputs=["inter", "additive"]).set_index("output")
+    assert abs(f.loc["inter", "first_order_runs"] - 2 / 3) < 0.04
+    assert abs(f.loc["additive", "first_order_runs"] - 1.0) < 0.04
+    assert (f.first_order_raw > f.first_order_runs).all() and (f.floor > 0.02).all() and (f.floor < 0.1).all()
+    assert (f.first_order_se > 0).all() and (f.leak_bound >= 0).all()
+    # the fast estimator equals the class-based one of the indices
+    cls, K, off = an.column_classes(X)
+    S_ref, _ = an.class_indices(X, Y)
+    assert np.allclose(an.first_order_only(cls, K, off, Y[:, 0]), S_ref[:, 0])
+
+
+def test_totals_check_flags():
+    ind = pd.DataFrame([{"output": "Y1", "family": "S", "N": 4096, "factor": c, "point": p, "lo": lo,
+                         "hi": hi, "nonzero": nz} for c, p, lo, hi, nz in
+                        (("X1", 0.30, 0.28, 0.32, True), ("X2", 0.006, 0.002, 0.012, False),
+                         ("X3", 0.05, 0.04, 0.06, True))])
+    tot = pd.DataFrame([{"N": 4096, "output": "Y1", "player": c, "T": t, "lo": lo, "hi": hi}
+                        for c, t, lo, hi in (("X1", 0.40, 0.38, 0.42), ("X2", 0.001, 0.0005, 0.0015),
+                                             ("X3", 0.20, 0.19, 0.21))])
+    budget = pd.DataFrame({"output": ["Y1"], "interactions_runs": [0.12]})
+    c = an.totals_check(ind, tot, budget).set_index("factor")
+    assert list(c.index) == ["X1", "X2", "X3"]
+    assert not c.loc["X1", "T_below_S"] and c.loc["X2", "T_below_S"] and c.loc["X2", "T_below_S_beyond_intervals"]
+    assert c.loc["X3", "T_above_upper"] and not c.loc["X1", "T_above_upper"]
+    assert np.isclose(c.loc["X1", "upper"], 0.42)
 
 
 def test_surrogate_totals_on_a_known_model():

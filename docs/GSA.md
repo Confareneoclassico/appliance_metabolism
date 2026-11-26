@@ -393,12 +393,25 @@ estimator or a surrogate could use, so their share of the variance stays out
 of the Shapley effects of the surrogate. `gsa.reseed` reruns points with the
 seeds redrawn, and `gsa.analyse --reseed` (part `seeds`) gives the total
 index of the seeds on the model by Jansen's estimator, T = mean((y - y')^2) /
-(2 Var Y), with a bootstrap interval over the points (`seeds.csv`). A
+(2 Var Y), with a bootstrap interval over the points (`seeds.csv`). The
+variance of every output then splits on the model alone, without the
+surrogate, into the first-order effects of the other factors (the sum of
+their class-based first-order indices from the runs, less the floor of the
+estimator that the matched dummies measure, about 0.001 per factor at 4,096
+Sobol' points against (K - 1)/n on independent points;
+`first_order_sums.csv`, with a bound of the leak of the design's residual
+dependence and the bootstrap standard error), the interactions among them by
+difference, I = 1 - T - first-order, and the K-means seed and the country
+multipliers (reruns): `budget.csv`, `fig_budget.pdf`, `tab_budget.tex`. A
 surrogate that reproduced E[Y | other factors] exactly would reproduce
-1 - T of the variance, so the variance of every output splits into the
-first-order effects and interactions of the factors (surrogate), the K-means
-seed and the country multipliers (reruns), and the error of the surrogate by
-difference (`budget.csv`, `fig_budget.pdf`, `tab_budget.tex`). The variant
+1 - T of the variance. Beside the budget, `budget.csv` gives what the
+surrogate reproduces of each part: its first-order sum, which falls short of
+that of the runs as gradient boosting shrinks its predictions, and its
+interactions, as a share of I (the share of the interactions it apportions
+among the factors through its total indices). For the model averaged over the
+seeds S_i <= T_i <= S_i + I, since T_i adds to S_i only the interaction terms
+that hold factor i: `totals_check.csv` sets every total index of the surrogate
+against these bounds, and `tab_totals.tex` gives S_i + I beside it. The variant
 `same` checks that the model is deterministic, and the outputs that no
 clustering enters (Y3, Y4, Y7, Y9, Y10, Y11) do not move when only the
 K-means seed is redrawn. Which factors modulate the effect of the seeds
