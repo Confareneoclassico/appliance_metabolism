@@ -1,6 +1,23 @@
 # Changelog
 
-## Unreleased
+## 1.1.0 (November 2026)
+
+The version of the revised manuscript ("Activity-Associated Appliance-Load
+Profiles of European Households from Time-Use Surveys: Multi-Level Clustering,
+Drivers and Robustness"): the corrections of the audit of November 2026, the
+global sensitivity analysis (`gsa/`, `docs/GSA.md`), the checks on the
+microdata for the reviewers (`tools/`) and their aggregate results.
+
+### Changed (26 November 2026, release)
+
+- `outputs/` holds the results of version 1.1.0 instead of those of the run of 14 October 2026
+  (which remain in versions 1.0.0 and 1.0.1): `outputs/pipeline/` the exports of the canonical run
+  of 20 November 2026 with its figures and the extract of its log, `outputs/checks/` the checks of
+  26 November 2026 and the principal components, `outputs/gsa/` the outputs of the 4,096 runs, of
+  the reruns with the seeds redrawn and of the earlier runs with powers uniform in watts, and the
+  results of the analysis (`outputs/README.md`).
+- `docs/PIPELINE.md` Section 5 maps the claims of the revised manuscript to these files; README,
+  `CITATION.cff` and `.zenodo.json` describe version 1.1.0 and the revised manuscript.
 
 ### Fixed (26 November 2026, debugging pass before 1.1.0)
 

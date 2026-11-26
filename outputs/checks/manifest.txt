@@ -1,0 +1,6 @@
+copied   paired_daytype_comparison.csv
+copied   paired_daytype_comparison_ddv1.csv
+copied   driver_robustness.csv
+copied   clustering_robustness.csv
+copied   paired_daytype_comparison.png
+copied   paired_daytype_comparison_ddv1.png

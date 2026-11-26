@@ -1,0 +1,11 @@
+country,benchmark,metric,canonical,median,p05,p95,mean_absolute,share_of_runs
+BE,Synergrid S21,correlation,0.7722059879098823,0.9171282530332646,0.8045828330454686,0.9465748711877356,,
+BE,Synergrid S21,peak_hour_error_h,-8.0,-8.0,-8.0,2.0,5.85986328125,
+BE,Synergrid S21,evening_peak_hour_error_h,-2.0,-1.0,-2.0,2.0,1.875732421875,
+BE,Synergrid S21,nrmse,0.5842437991469046,0.22968195553564635,0.11114115172716807,0.43671255743918047,,
+BE,Synergrid S21,evening_maximum,0.0,,,,,0.350830078125
+FR,Enedis RES1,correlation,0.8120269559813285,0.9062068847636389,0.829723178162062,0.9374992477696704,,
+FR,Enedis RES1,peak_hour_error_h,-8.0,-1.0,-8.0,2.0,4.2001953125,
+FR,Enedis RES1,evening_peak_hour_error_h,-1.0,0.0,-1.0,2.0,0.2734375,
+FR,Enedis RES1,nrmse,0.5993552891595195,0.25014021062776615,0.12059922952126503,0.4786915366142822,,
+FR,Enedis RES1,evening_maximum,0.0,,,,,0.5009765625
