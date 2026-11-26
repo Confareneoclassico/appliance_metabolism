@@ -35,10 +35,11 @@ Draws, as PDF:
   fig_ot_s.pdf         OT index against first-order index of every
                        factor and output, with the bound S/2 and the curve of
                        a pure shift of a Gaussian output (needs ot_parts.csv)
-  fig_budget.pdf       variance budget of every output: factors (first-order
-                       effects and interactions), seeds and the error of the
-                       surrogate (needs budget.csv, from the reruns of
-                       gsa.reseed)
+  fig_budget.pdf       variance budget of every output from the model: the
+                       factors' first-order effects (runs) and interactions
+                       (by difference, the part the surrogate apportions
+                       shown apart) and the seeds (needs budget.csv, from the
+                       reruns of gsa.reseed)
   fig_totals.pdf       total index of every factor (surrogate) with the
                        first-order index below it, and the total index of the
                        seeds from the reruns (needs totals.csv; seeds.csv)
@@ -696,37 +697,35 @@ def fig_brackets(br, out, floor=0.02, top=7):
 
 
 def fig_budget(budget, out):
-    """Variance budget of every output as a stacked bar: first-order effects
-    and interactions of the factors (surrogate), the K-means seed and the
-    country multipliers (reruns of the model), and the error of the surrogate
-    by difference (drawn as zero where it is negative, with its value)."""
+    """Variance budget of every output as a stacked bar, from the model
+    alone: first-order effects of the factors (runs), their interactions (by
+    difference) split into the part the surrogate apportions and the rest,
+    and the K-means seed and the draw of the country multipliers (reruns).
+    The parts add up to one."""
     YELLOW, MAGENTA = "#eda100", "#e87ba4"
-    parts = [("first_order", "First-order effects", BLUE), ("interactions", "Interactions", AQUA)]
+    parts = [("first_order_runs", "First-order effects", BLUE),
+             ("surrogate_interactions", "Interactions apportioned by the surrogate", AQUA),
+             ("interactions_not_apportioned", "Interactions not apportioned", MUTED)]
     if "kmeans" in budget.columns:
         parts += [("kmeans", "K-means seed", YELLOW), ("multipliers", "Draw of the multipliers (X8)", MAGENTA)]
     else:
         parts += [("seeds", "Seeds", YELLOW)]
-    parts += [("error", "Not reproduced by the surrogate", MUTED)]
     b = budget.set_index("output").reindex([y for y in OUTPUTS if y in set(budget.output)])
-    fig, ax = plt.subplots(figsize=(7.0, 4.2))
+    fig, ax = plt.subplots(figsize=(7.0, 4.4))
     ypos = np.arange(len(b))[::-1]
     left = np.zeros(len(b))
     for col, name, colour in parts:
         v = np.clip(b[col].to_numpy(dtype=float), 0, None)
         ax.barh(ypos, v, left=left, color=colour, edgecolor=SURFACE, linewidth=1.0, height=0.7, label=name)
         left += v
-    for yp, e in zip(ypos, b["error"].to_numpy(dtype=float)):
-        if e < 0:
-            ax.annotate(f"error {e:.2f}", (1.0, yp), xytext=(4, 0), textcoords="offset points",
-                        va="center", fontsize=5.5, color=TEXT2)
     ax.set_yticks(ypos)
     ax.set_yticklabels([SHORT_OUTPUT[y] for y in b.index])
-    ax.set_xlim(0, 1.12)
+    ax.set_xlim(0, 1.0)
     ax.set_xticks(np.linspace(0, 1, 6))
     ax.set_xlabel("Share of Var Y")
     ax.grid(axis="x")
     ax.set_axisbelow(True)
-    ax.legend(loc="upper center", bbox_to_anchor=(0.45, 1.13), ncol=len(parts), fontsize=6, frameon=False)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.45, 1.17), ncol=3, fontsize=6, frameon=False)
     fig.tight_layout()
     fig.savefig(out / "fig_budget.pdf")
     plt.close(fig)

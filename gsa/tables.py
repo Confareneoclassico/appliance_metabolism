@@ -213,16 +213,24 @@ def table_totals(results, floor=0.01):
     seeds = pd.read_csv(results / "seeds.csv") if (results / "seeds.csv").is_file() else None
     N = ind.N.max()
     ind, tot = ind[ind.N == N], tot[tot.N == tot.N.max()]
-    cols = "Output and factor & $T_i$ & 95\\% interval & $S_i$ & $\\iota_i$"
+    budget = pd.read_csv(results / "budget.csv").set_index("output") if (results / "budget.csv").is_file() \
+        else None
+    inter = (budget["interactions_runs"] if budget is not None and "interactions_runs" in budget.columns
+             else None)
+    cols = "Output and factor & $T_i$ & 95\\% interval & $S_i$ & $\\iota_i$" + \
+        (" & $S_i + I$" if inter is not None else "")
     head = (f"\\toprule\n{cols} \\\\\n\\midrule\n\\endfirsthead\n\\toprule\n{cols} \\\\\n\\midrule\n"
             "\\endhead\n\\bottomrule\n\\endfoot\n")
     body = head
     for y in OUTPUTS:
         a = ind[ind.output == y]
         t = tot[(tot.output == y) & (tot.player != "D_cont")].set_index("player")
-        body += (f"\\multicolumn{{5}}{{l}}{{{OUTPUT_LABEL[y]}}} \\\\\n"
-                 f"\\multicolumn{{5}}{{l}}{{\\quad surrogate reproduces {t.explained.iloc[0]:.2f} of the "
-                 "variance} \\\\\n")
+        nc = 6 if inter is not None else 5
+        extra = (f"; interactions among the factors $I$ = {inter[y]:.3f}"
+                 if inter is not None and y in inter.index else "")
+        body += (f"\\multicolumn{{{nc}}}{{l}}{{{OUTPUT_LABEL[y]}}} \\\\\n"
+                 f"\\multicolumn{{{nc}}}{{l}}{{\\quad surrogate reproduces {t.explained.iloc[0]:.2f} of the "
+                 f"variance{extra}}} \\\\\n")
         nz_s = set(a[(a.family == "S") & a.nonzero.map(is_true)].factor)
         nz_o = set(a[(a.family == "OT") & a.nonzero.map(is_true)].factor)
         nz_t = set(t[t.nonzero.map(is_true) & (t["T"] >= floor)].index) - {"P_appliances"}
@@ -239,22 +247,30 @@ def table_totals(results, floor=0.01):
                 ci = f"{num(r.lo)} to {num(r.hi)}"
             else:
                 tv, ci = "--", "--"
-            body += f"\\quad {label(p)} & {tv} & {ci} & {get('S')} & {get('OT')} \\\\\n"
+            up = ""
+            if inter is not None and y in inter.index:
+                r_s = a[(a.family == "S") & (a.factor == p)]
+                up = " & " + (num(float(r_s.iloc[0].point) + float(inter[y])) if not r_s.empty else "--")
+            body += f"\\quad {label(p)} & {tv} & {ci} & {get('S')} & {get('OT')}{up} \\\\\n"
         if seeds is not None:
             sd = seeds[seeds.output == y].set_index("variant")
             km, both = sd.loc["kmeans"], sd.loc["seeds"]
             km_ci = f"{num(km.lo)} to {num(km.hi)}" if km["T"] > 0 else "--"
-            body += (f"\\quad K-means seed (X21), reruns & {num(km['T'])} & {km_ci} & -- & -- "
+            dash = " & --" if inter is not None else ""
+            body += (f"\\quad K-means seed (X21), reruns & {num(km['T'])} & {km_ci} & -- & --{dash} "
                      "\\\\\n"
-                     f"\\quad Seeds together, reruns & {num(both['T'])} & {num(both.lo)} to {num(both.hi)} & -- & -- "
-                     "\\\\\n")
+                     f"\\quad Seeds together, reruns & {num(both['T'])} & {num(both.lo)} to {num(both.hi)} & -- & --"
+                     f"{dash} \\\\\n")
         body += "\\addlinespace\n"
     return wrap(body, f"Indices at {N:,} runs for the factors read as non-zero in at least one family: total "
                 "index $T_i$ of the surrogate as a share of Var $Y$, with the 95\\% interval of 50 bootstrap "
                 "refits, and the first-order ($S_i$) and OT ($\\iota_i$) indices computed from the runs. "
                 "$^{\\circ}$: not read as non-zero in that family. The seeds: total index on the model from "
-                "the reruns of 256 points with the seeds redrawn, with a bootstrap interval over the points.",
-                "tab:totals", "lrrrr", long=True)
+                "the reruns of 256 points with the seeds redrawn, with a bootstrap interval over the points."
+                + (" $S_i + I$: the upper end of the bracket $S_i \\le T_i \\le S_i + I$ that the runs and the "
+                   "reruns give without a surrogate, $I$ being the share of all the interactions among the "
+                   "factors in Table~\\ref{tab:budget}." if inter is not None else ""),
+                "tab:totals", "lrrrr" + ("r" if inter is not None else ""), long=True)
 
 
 def table_seeds(results):
@@ -577,37 +593,40 @@ def table_brackets(results, floor=0.05):
 
 
 def table_budget(results):
-    """Variance budget: the part of the factors (the variance of the mean
-    over the seeds, 1 - T_seeds) split into what the surrogate attributes
-    (first-order effects and interactions) and what it does not, and the part
-    of the seeds from the reruns."""
+    """Variance budget from the model alone: the first-order effects of the
+    factors other than the seeds (from the runs), their interactions (by
+    difference) and the seeds (reruns), which add up to one, with the share
+    of the interactions that the surrogate apportions among the factors."""
     d = pd.read_csv(results / "budget.csv").set_index("output")
     split = "kmeans" in d.columns
     nseed = 3 if split else 1
-    head = ("\\toprule\n & \\multicolumn{4}{c}{Factors (mean over the seeds)} & "
-            f"\\multicolumn{{{nseed}}}{{c}}{{Seeds (reruns of the model)}} \\\\\n"
-            f"\\cmidrule(lr){{2-5}}\\cmidrule(lr){{6-{5 + nseed}}}\n"
-            "Output & First-order & Inter- & Not & Together & "
+    head = ("\\toprule\n & \\multicolumn{2}{c}{Factors other than the seeds} & "
+            f"\\multicolumn{{{nseed}}}{{c}}{{Seeds (reruns of the model)}} & Surrogate \\\\\n"
+            f"\\cmidrule(lr){{2-3}}\\cmidrule(lr){{4-{3 + nseed}}}\\cmidrule(lr){{{4 + nseed}-{4 + nseed}}}\n"
+            "Output & First-order & Interactions & "
             + ("K-means & Draw of the & " if split else "")
-            + "Together \\\\\n & effects & actions & attributed & & "
-            + ("seed & multipliers & " if split else "") + "\\\\\n\\midrule\n")
+            + "Together & Share of the \\\\\n & effects & (by difference) & "
+            + ("seed & multipliers & " if split else "") + "& interactions \\\\\n\\midrule\n")
     body = head
     for y in [y for y in OUTPUTS if y in d.index]:
         r = d.loc[y]
         seeds = f"{num(r.seeds, 3)} ({num(r.seeds_lo, 3)} to {num(r.seeds_hi, 3)})"
-        body += (f"{y} {SHORT[y]} & {num(r.first_order, 3)} & {num(r.interactions, 3)} & "
-                 f"{num(r.error, 3)} & {num(1 - r.seeds, 3)} & "
+        inter = f"{num(r.interactions_runs, 3)} ({num(r.interactions_lo, 3)} to {num(r.interactions_hi, 3)})"
+        share = num(r.surrogate_share, 2) if "surrogate_share" in d.columns else "--"
+        body += (f"{y} {SHORT[y]} & {num(r.first_order_runs, 3)} & {inter} & "
                  + (f"{num(r.kmeans, 3)} & {num(r.multipliers, 3)} & " if split else "")
-                 + f"{seeds} \\\\\n")
+                 + f"{seeds} & {share} \\\\\n")
     body += "\\bottomrule\n"
-    return wrap(body, "Variance budget of every output, as shares of Var Y. The factors other than the "
-                "seeds account for the variance of the mean of the output over the seeds, one less the "
-                "total index of the seeds (Together). The surrogate attributes its first-order effects "
-                "(the sum of its first-order indices) and its interactions (the share it reproduces less "
-                "that sum), and leaves the rest of that variance unattributed. The seeds: their total "
-                "index on the model from the reruns with the seeds redrawn (Jansen's estimator, 95\\% "
-                "bootstrap interval). Each row adds up to one.", "tab:budget",
-                "lrrrr" + ("rrr" if split else "r"), size="\\footnotesize", fit=True)
+    return wrap(body, "Variance budget of every output from the model alone, as shares of Var $Y$. "
+                "First-order effects: the sum of the first-order indices of the factors other than the "
+                "seeds, computed from the runs, less the floor of the estimator measured on the dummies "
+                "(0.010 to 0.011). Interactions among those factors: one less the first-order effects and the "
+                "total index of the seeds, with a 95\\% interval from the standard errors of both. Seeds: "
+                "their total index from the reruns with the seeds redrawn (Jansen's estimator, 95\\% "
+                "bootstrap interval). Each row adds up to one without the surrogate. Last column: the share "
+                "of the interactions that the surrogate reproduces and so apportions among the factors "
+                "through its total indices (imprecise where the interactions are small, as for Y5 to Y8).",
+                "tab:budget", "lrr" + ("rrr" if split else "r") + "r", size="\\footnotesize", fit=True)
 
 
 def table_validation(results):

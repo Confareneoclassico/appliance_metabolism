@@ -45,10 +45,21 @@ it runs anywhere. In FOLDER:
   seeds.csv        with --reseed: total index of the redrawn seeds on every
                    output from the reruns of gsa.reseed (Jansen's estimator),
                    by variant, with a bootstrap interval
-  budget.csv       with --reseed and brackets.csv: the variance of every
-                   output split into first-order effects and interactions of
-                   the factors (surrogate), the seeds (model) and the error of
-                   the surrogate (by difference)
+  budget.csv       with --reseed: the variance of every output from the model
+                   alone, as the first-order effects of the factors other than
+                   the seeds (sum of their first-order indices from the runs,
+                   first_order_sums), the interactions among them (by
+                   difference) and the seeds (reruns), which add up to one;
+                   with brackets.csv also what the surrogate reproduces of
+                   each part, and so the share of the interactions it
+                   apportions among the factors
+  first_order_sums.csv  with --reseed: that sum, the floor of the estimator,
+                   a bound of the leak of the design's dependence, and the
+                   bootstrap standard error
+  totals_check.csv with --reseed, indices.csv and totals.csv: the total index
+                   of the surrogate of every factor against the bracket
+                   S_i <= T_i <= S_i + I that the runs and the reruns give
+                   without a surrogate (I the share of the interactions)
   profile_bands.npz  5th, 50th and 95th percentiles over the runs of the
                    profile of every country and day type
   hourly_ot.csv    OT index of every factor for the hourly values of the
@@ -761,32 +772,147 @@ def seed_dispersion(table, reseeded, bands=None, factors=("X7", "X16", "X2", "X1
     return pd.DataFrame(rows), pd.DataFrame(corr)
 
 
-def variance_budget(brackets, seeds, kmeans=None):
-    """Budget of the variance of every output: the first-order indices and
-    the interactions of the factors other than the seeds (the surrogate's
-    first-order indices and its Shapley effects, which add up to the share it
-    reproduces), the total index of the seeds on the model (gsa.reseed,
-    variant seeds), split into the K-means seed and the country multipliers
-    when the variant kmeans is given, and the error of the surrogate by
-    difference. A surrogate that reproduced E[Y | other factors] exactly
-    would reproduce 1 - T_seeds of the variance, so the parts add up to one."""
+def first_order_only(cls, K, off, y):
+    """Class-based first-order index of every column for one output, as
+    indices_one_output without the OT index (classes from column_classes)."""
+    n, J = cls.shape
+    var = y.var()
+    if var == 0:
+        return np.zeros(J)
+    y = y - y.mean()
+    g = (cls + off).ravel()
+    nK = int(K.sum())
+    cnt = np.bincount(g, minlength=nK)
+    share = cnt / n
+    col_of = np.repeat(np.arange(J), K)
+    means = np.bincount(g, weights=np.repeat(y, J), minlength=nK) / np.maximum(cnt, 1)
+    mcol = np.bincount(col_of, weights=share * means, minlength=J)
+    return np.bincount(col_of, weights=share * (means - mcol[col_of]) ** 2, minlength=J) / var
+
+
+def first_order_sums(X, Y, B=300, seed=0, outputs=OUTPUTS):
+    """The first-order part of the variance of every output from the runs,
+    without a surrogate: the sum over the factors other than the seeds of
+    their class-based first-order indices (first_order_raw), less the floor
+    of the estimator (first_order_runs). The floor of factor i is the index
+    of its matched dummy, averaged over the outputs, times 1 - S_i: about
+    0.001 per factor with 25 classes on 4,096 Sobol' points, against
+    (K - 1)/n on independent points, because the points of each class are
+    spread evenly over the other columns. Also leak_bound, the sum over the
+    pairs of factors of d(i -> j) S_j, with d(i -> j) the index of column j
+    on the classes of column i (design_dependence): an upper bound of the
+    part of the effect of a factor j that the residual dependence of the
+    design counts again in S_i (an upper bound because d holds the noise
+    the floor already removes); the first-order part may be smaller by that
+    much. With the standard error of the raw sum over B resamples of the
+    runs (classes drawn again on each, as in the bootstrap of the
+    indices)."""
+    factors = [c for c in FACTOR_IDS if c not in SEEDS]
+    fi = [COLUMNS.index(c) for c in factors]
+    cls, K, off = column_classes(X)
+    S = np.column_stack([first_order_only(cls, K, off, Y[:, o]) for o in range(Y.shape[1])])
+    level = {d: float(S[COLUMNS.index(d)].mean()) for d in design.DUMMIES}
+    floor = np.array([level[matched_dummy(c)] for c in factors])[:, None] * (1 - S[fi])
+    dep = np.column_stack([first_order_only(cls, K, off, X[:, j]) for j in fi])[fi]   # d(i -> j)
+    np.fill_diagonal(dep, 0.0)
+    leak = dep @ S[fi]
+    rng = np.random.default_rng(seed)
+    boot = np.empty((B, Y.shape[1]))
+    for b in range(B):
+        idx = rng.integers(0, len(X), len(X))
+        cb, Kb, ob = column_classes(X[idx][:, fi])
+        boot[b] = [first_order_only(cb, Kb, ob, Y[idx, o]).sum() for o in range(Y.shape[1])]
+    rows = []
+    for o, y in enumerate(outputs):
+        raw = float(S[fi, o].sum())
+        rows.append({"output": y, "first_order_raw": raw, "floor": float(floor[:, o].sum()),
+                     "first_order_runs": raw - float(floor[:, o].sum()),
+                     "leak_bound": float(leak[:, o].sum()),
+                     "first_order_se": float(boot[:, o].std(ddof=1))})
+    return pd.DataFrame(rows)
+
+
+def variance_budget(brackets, seeds, kmeans=None, first=None):
+    """Budget of the variance of every output. From the model alone, with
+    `first` (first_order_sums): the first-order effects of the factors other
+    than the seeds (from the runs), the interactions among them by
+    difference, I = 1 - T_seeds - first-order, with an interval from the
+    standard errors of both, and the seeds (their total index from the
+    reruns, variant seeds, split into the K-means seed and the draw of the
+    country multipliers when the variant kmeans is given); the three add up
+    to one. With the surrogate's brackets.csv, what it reproduces: its
+    first-order effects (sum of its first-order indices) and interactions
+    (the share it reproduces less that sum), the share of I that it
+    apportions among the factors, and the rest of the factors' variance,
+    split into first-order variance it compresses and interactions it does
+    not apportion (not_attributed, by difference: a surrogate that
+    reproduced E[Y | other factors] exactly would reproduce 1 - T_seeds)."""
     b = brackets[(brackets.game == "single") & (brackets.player != "D_cont")]
     explained = brackets.groupby("output").explained.mean()
-    first = b.groupby("output").S.sum()
+    sur_first = b.groupby("output").S.sum()
     t = seeds.set_index("output")
     k = kmeans.set_index("output") if kmeans is not None else None
+    f = first.set_index("output") if first is not None else None
     rows = []
     for y in OUTPUTS:
-        if y not in explained.index or y not in t.index:
+        if y not in t.index or (y not in explained.index and f is None):
             continue
-        row = {"output": y, "first_order": float(first[y]),
-               "interactions": float(explained[y] - first[y]), "seeds": float(t.loc[y, "T"]),
+        row = {"output": y, "seeds": float(t.loc[y, "T"]),
                "seeds_lo": float(t.loc[y, "lo"]), "seeds_hi": float(t.loc[y, "hi"])}
         if k is not None:
             row["kmeans"] = float(k.loc[y, "T"])
             row["multipliers"] = row["seeds"] - row["kmeans"]
-        row["error"] = 1.0 - float(explained[y]) - row["seeds"]
+        if f is not None and y in f.index:
+            fo = f.loc[y]
+            I = 1.0 - row["seeds"] - float(fo.first_order_runs)
+            se = float(np.hypot(fo.first_order_se, (row["seeds_hi"] - row["seeds_lo"]) / (2 * 1.96)))
+            row.update({"first_order_runs": float(fo.first_order_runs), "interactions_runs": I,
+                        "interactions_lo": I - 1.96 * se, "interactions_hi": I + 1.96 * se,
+                        "first_order_raw": float(fo.first_order_raw), "floor": float(fo.floor),
+                        "leak_bound": float(fo.leak_bound), "first_order_se": float(fo.first_order_se)})
+        if y in explained.index:
+            row.update({"surrogate_first_order": float(sur_first[y]),
+                        "surrogate_interactions": float(explained[y] - sur_first[y]),
+                        "explained": float(explained[y]),
+                        "not_attributed": 1.0 - float(explained[y]) - row["seeds"]})
+            if "first_order_runs" in row:
+                row["surrogate_share"] = (row["surrogate_interactions"] / row["interactions_runs"]
+                                          if row["interactions_runs"] > 0 else np.nan)
+                row["first_order_compressed"] = row["first_order_runs"] - row["surrogate_first_order"]
+                row["interactions_not_apportioned"] = (row["interactions_runs"]
+                                                       - row["surrogate_interactions"])
         rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def totals_check(indices, totals, budget):
+    """The total index of the surrogate of every factor other than the seeds
+    against the bracket S_i <= T_i <= S_i + I of the model averaged over the
+    seeds, from the first-order index of the runs (largest size) and the
+    share I of the interactions in the budget: T_i adds to S_i only the
+    interaction terms that hold factor i, which cannot exceed all of them.
+    The flags say where the surrogate's T_i falls below S_i, beyond the
+    intervals of both or not, and whether S_i reads as non-zero."""
+    ind = indices[(indices.family == "S") & (indices.N == indices.N.max())]
+    tot = totals[totals.N == totals.N.max()]
+    I = budget.set_index("output")["interactions_runs"]
+    rows = []
+    for y in OUTPUTS:
+        if y not in I.index:
+            continue
+        a = ind[ind.output == y].set_index("factor")
+        t = tot[tot.output == y].set_index("player")
+        for c in [c for c in FACTOR_IDS if c not in SEEDS]:
+            if c not in a.index or c not in t.index:
+                continue
+            s, tt = a.loc[c], t.loc[c]
+            rows.append({"output": y, "factor": c, "S": float(s.point), "S_lo": float(s.lo),
+                         "S_hi": float(s.hi), "S_nonzero": str(s.nonzero) == "True",
+                         "T": float(tt["T"]), "T_lo": float(tt.lo), "T_hi": float(tt.hi),
+                         "upper": float(s.point + I[y]),
+                         "T_below_S": bool(tt["T"] < s.point),
+                         "T_below_S_beyond_intervals": bool(tt.hi < s.lo),
+                         "T_above_upper": bool(tt["T"] > s.point + I[y])})
     return pd.DataFrame(rows)
 
 
@@ -1047,9 +1173,20 @@ def part_seeds(table, reseed, out, log):
         pd.concat(corr).to_csv(out / "seed_modulators.csv", index=False)
     if "same" in totals and totals["same"]["T"].abs().max() > 0:
         log("  WARNING: the reruns of variant same differ from the base runs")
-    if (out / "brackets.csv").is_file() and "seeds" in totals:
-        variance_budget(pd.read_csv(out / "brackets.csv"), totals["seeds"],
-                        totals.get("kmeans")).to_csv(out / "budget.csv", index=False)
+    if "seeds" in totals:
+        first = first_order_sums(table[COLUMNS].to_numpy(dtype=float), table[OUTPUTS].to_numpy(dtype=float))
+        first.to_csv(out / "first_order_sums.csv", index=False)
+        brackets = pd.read_csv(out / "brackets.csv") if (out / "brackets.csv").is_file() else \
+            pd.DataFrame(columns=["output", "game", "player", "S", "explained"])
+        budget = variance_budget(brackets, totals["seeds"], totals.get("kmeans"), first)
+        budget.to_csv(out / "budget.csv", index=False)
+        if (out / "indices.csv").is_file() and (out / "totals.csv").is_file():
+            check = totals_check(pd.read_csv(out / "indices.csv"), pd.read_csv(out / "totals.csv"), budget)
+            check.to_csv(out / "totals_check.csv", index=False)
+            log(f"  surrogate T below the runs' S in {int(check.T_below_S.sum())} of {len(check)} pairs "
+                f"({int((check.T_below_S & check.S_nonzero).sum())} with S read as non-zero, "
+                f"{int(check.T_below_S_beyond_intervals.sum())} beyond both intervals); "
+                f"above S + I in {int(check.T_above_upper.sum())}")
 
 
 def run_all(share, out, uniform=None, B=500, sizes=SIZES, n_perm=10000, B_surrogate=50,
