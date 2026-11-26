@@ -713,8 +713,8 @@ def create_country_comparison_visualization(comparison_df):
     axes[0, 0].bar(range(len(comparison_df)), comparison_df['n_households'], 
                    color='lightblue', edgecolor='black')
     axes[0, 0].set_xlabel('Country')
-    axes[0, 0].set_ylabel('Number of Households')
-    axes[0, 0].set_title('Households per Country')
+    axes[0, 0].set_ylabel('Household-days')
+    axes[0, 0].set_title('Household-days per Country')
     axes[0, 0].set_xticks(range(len(comparison_df)))
     axes[0, 0].set_xticklabels(comparison_df['country'], rotation=45)
     axes[0, 0].grid(True, alpha=0.3, axis='y')
@@ -923,7 +923,7 @@ def create_combined_analysis_visualizations(summary_df):
     
     # Plot 1: Heatmap of household counts
     im1 = axes[0, 0].imshow(pivot_table.values, cmap='YlOrRd', aspect='auto')
-    axes[0, 0].set_title('Number of Households\n(Country × Day Type)', fontsize=12)
+    axes[0, 0].set_title('Household-days\n(Country × Day Type)', fontsize=12)
     axes[0, 0].set_xlabel('Day Type')
     axes[0, 0].set_ylabel('Country')
     axes[0, 0].set_xticks(range(len(pivot_table.columns)))
@@ -1075,7 +1075,7 @@ def plot_country_time_series_profiles(clustering_data, energy_columns, output_di
         peak_to_avg = peak_value / avg_power if avg_power > 0 else 0
         
         # Customize plot
-        ax.set_title(f'{country}\n(n={len(country_data)} households)', fontsize=10)
+        ax.set_title(f'{country}\n(n={len(country_data)} household-days)', fontsize=10)
         ax.set_xlabel('Time of day', fontsize=9)
         ax.set_ylabel('Power (W)', fontsize=9)
         ax.grid(True, alpha=0.3, linestyle=':')
@@ -1248,7 +1248,7 @@ def plot_daytype_time_series_profiles(clustering_data, energy_columns, output_di
         avg_power = np.mean(mean_profile)
         peak_time = np.argmax(mean_profile) / 6
         
-        ax.set_title(f'{label}\n(n={len(day_data)} households)', fontsize=14)
+        ax.set_title(f'{label}\n(n={len(day_data)} household-days)', fontsize=14)
         ax.set_xlabel('Time of day', fontsize=12)
         ax.set_ylabel('Average Power (W)', fontsize=12)
         ax.grid(True, alpha=0.3, linestyle=':')
