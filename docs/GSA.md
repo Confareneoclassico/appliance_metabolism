@@ -39,15 +39,18 @@ python3 -m gsa.check --bundle ~/hetus_gsa/bundle --threads 8
 python3 -m gsa.run --bundle ~/hetus_gsa/bundle --runs ~/hetus_gsa/runs --first 4 --workers 1 --threads 8
 python3 -m gsa.run --bundle ~/hetus_gsa/bundle --runs ~/hetus_gsa/runs --first 12 --workers 4 --threads 2
 
-# 4. The 1,024 runs with the faster setting (an interrupted run resumes), and
-#    the 256 runs of the check of the distributions of the powers
-python3 -m gsa.run --bundle ~/hetus_gsa/bundle --runs ~/hetus_gsa/runs --workers 4 --threads 2
+# 4. The 4,096 runs of the paper (2^12 points) with the faster setting; an
+#    interrupted run resumes, and the sample can be grown in steps (--m 10,
+#    11, 12), since the first 2^m points of the sequence do not change.
+#    Optional: 256 runs with the powers uniform in watts, a check of the law of
+#    the powers that the final analysis no longer uses (Section 8)
+python3 -m gsa.run --bundle ~/hetus_gsa/bundle --runs ~/hetus_gsa/runs --m 12 --workers 4 --threads 2
 python3 -m gsa.run --bundle ~/hetus_gsa/bundle --runs ~/hetus_gsa/runs_uniform --m 8 \
-    --uniform-in-watts --workers 4 --threads 2
+    --uniform-in-watts --workers 4 --threads 2      # optional
 
-# 5. The files that can be shared, in ~/hetus_gsa/share/ and share_uniform/
+# 5. The files that can be shared, in ~/hetus_gsa/share/ (and share_uniform/)
 python3 -m gsa.collect --runs ~/hetus_gsa/runs
-python3 -m gsa.collect --runs ~/hetus_gsa/runs_uniform --out ~/hetus_gsa/share_uniform
+python3 -m gsa.collect --runs ~/hetus_gsa/runs_uniform --out ~/hetus_gsa/share_uniform   # optional
 
 # 6. The seeds: the first 256 points again with both seeds redrawn, and with
 #    the K-means seed alone redrawn, after three points rerun unchanged (the
@@ -254,7 +257,8 @@ On the microdata (191,740 household-days, an eight-core laptop of 2026),
 `gsa.check` took 2 minutes and a pilot with 10 K-means starts took 7 seconds
 per run with four workers of two threads (24 seconds in each worker) and 13
 seconds with one worker of eight threads, so 1,024 runs should take about 2
-hours with 10 starts and about twice as long with the default 20. On a random
+hours with 10 starts and about twice as long with the default 20. The 4,096
+runs of the paper took a median of 40 seconds per run with 20 starts. On a random
 bundle of the same size a run needed about 1.5 GB of memory, K-means taking
 nine tenths of the time; the memory of each worker sets how many can run
 together. Fewer starts make the partitions depend more on the seed X21,
@@ -266,7 +270,7 @@ which the analysis then shows.
 (`gsa_outputs.csv`, `gsa_profiles.npz`), so it runs anywhere:
 
 ```bash
-python3 -m gsa.analyse --share ~/hetus_gsa/share --uniform ~/hetus_gsa/share_uniform \
+python3 -m gsa.analyse --share ~/hetus_gsa/share \
     --reseed ~/hetus_gsa/reseed_share --out ~/hetus_gsa/results
 python3 -m gsa.figures --results ~/hetus_gsa/results --out ~/hetus_gsa/figures \
     --share ~/hetus_gsa/share
@@ -280,6 +284,10 @@ profiles, uniform, otparts, brackets, totals, seeds), so that two processes
 can share the work; with one thread each (`OMP_NUM_THREADS=1`) the whole
 analysis takes about two hours on two cores, most of it in brackets and
 totals.
+The part uniform needs `--uniform` with the share of the optional runs with
+powers uniform in watts; the paper no longer reports it, since the law of the
+powers is log-uniform: a power is uncertain by a factor rather than by a fixed
+number of watts.
 
 **Dependence between the columns.** The given-data estimators read the effect
 of a factor from the runs in each of its classes, which is right only if each

@@ -77,6 +77,11 @@ FIGURES = [
     (FIGURES_DIR, "country_cluster_profiles_small_multiples.png"),
     (FIGURES_DIR, "elbow_method_improved.png"),
     (COUNTRY_DAYTYPE_DIR, "country_daytype_profiles_small_multiples.png"),
+    # the two country summaries of the manuscript (Figures 4 and A1): counts,
+    # means and K of countries and of countries by day type, all of them in
+    # the tables above
+    (COUNTRY_DIR, "country_comparison_summary.png"),
+    (COUNTRY_DAYTYPE_DIR, "country_daytype_combined_summary.png"),
     (FIGURES_DIR, "paired_daytype_comparison.png"),
     (FIGURES_DIR, "paired_daytype_comparison_ddv1.png"),
 ]

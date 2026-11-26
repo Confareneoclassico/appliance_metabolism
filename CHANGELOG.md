@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Fixed (26 November 2026, debugging pass before 1.1.0)
+
+- `tools/collect_exports.py` now copies the two country summaries of the manuscript,
+  `country_comparison_summary.png` and `country_daytype_combined_summary.png` (Figures 4 and A1);
+  everything they show is in the tables it already copies (`tests/test_collect_exports.py`).
+- `docs/GSA.md`: the recipe gives the design of the paper (4,096 runs, `--m 12`) and marks the runs
+  with powers uniform in watts as an optional check that the final analysis no longer uses.
+
 ### Fixed (26 November 2026)
 
 - Stage 06 figures: the counts labelled households are household-days (the 15 countries sum to
