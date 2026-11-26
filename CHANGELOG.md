@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Fixed (26 November 2026)
+
+- Stage 06 figures: the counts labelled households are household-days (the 15 countries sum to
+  the 191,740 household-days of the run), and the axis and panel titles now say so.
+
 ### Added (26 November 2026)
 
 - `tools/pca_summary.py`: shares of variance and windows of the day of the first principal
