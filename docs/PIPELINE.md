@@ -679,6 +679,11 @@ keeps all its columns when no country has 50 paired households (its printout
 failed then). `run_folder.py` holds the shared lookup and checks of the
 processed folder.
 
+`pca_summary.py` prints the principal components of the global clustering as
+the manuscript reports them (Section 3.2): the components that 80, 90 and 95%
+of the variance need, the share of the first five, and the window of the day of
+each (`python3 tools/pca_summary.py --bundle ~/hetus_gsa/bundle`).
+
 Tests: `test_paired_day_types.py`, `test_driver_robustness.py`,
 `test_clustering_robustness.py`, on synthetic data with known answers, and
 `test_reviewer_checks.py`, which runs Stages 01 to 07 on synthetic raw files in
