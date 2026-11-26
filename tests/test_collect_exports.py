@@ -89,3 +89,16 @@ def test_wrong_processed_folder_is_reported(stage_dirs, tmp_path):
     done = run_collector(stage_dirs, tmp_path / "share")       # nothing in the folder
     assert done.returncode == 1
     assert "None of the tables was found" in done.stdout
+
+
+def test_country_summary_figures_are_collected(stage_dirs, tmp_path):
+    """The two country summaries of the manuscript are copied with the tables."""
+    proc = stage_dirs["HETUS_PROCESSED_DIR"]
+    for sub, name in (("Country_Analysis", "country_comparison_summary.png"),
+                      ("Country_DayType_Analysis", "country_daytype_combined_summary.png")):
+        (proc / sub).mkdir(parents=True, exist_ok=True)
+        (proc / sub / name).write_bytes(b"\x89PNG\r\n")
+    out = tmp_path / "share"
+    run_collector(stage_dirs, out)
+    copied = {p.name for p in out.iterdir()}
+    assert {"country_comparison_summary.png", "country_daytype_combined_summary.png"} <= copied
