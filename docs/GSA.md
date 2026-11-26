@@ -272,11 +272,13 @@ which the analysis then shows.
 ```bash
 python3 -m gsa.analyse --share ~/hetus_gsa/share \
     --reseed ~/hetus_gsa/reseed_share --out ~/hetus_gsa/results
+# validation before tables, which read its two files for tab_validation and
+# tab_country_bands
+python3 -m gsa.validation --share ~/hetus_gsa/share --canonical exports_for_sharing \
+    --out ~/hetus_gsa/results
 python3 -m gsa.figures --results ~/hetus_gsa/results --out ~/hetus_gsa/figures \
     --share ~/hetus_gsa/share
 python3 -m gsa.tables --results ~/hetus_gsa/results --out ~/hetus_gsa/tables
-python3 -m gsa.validation --share ~/hetus_gsa/share --canonical exports_for_sharing \
-    --out ~/hetus_gsa/results
 ```
 
 `--parts` runs a subset (summary, dependence, indices, knn, surrogate,

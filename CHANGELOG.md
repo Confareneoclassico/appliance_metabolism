@@ -8,7 +8,9 @@
   `country_comparison_summary.png` and `country_daytype_combined_summary.png` (Figures 4 and A1);
   everything they show is in the tables it already copies (`tests/test_collect_exports.py`).
 - `docs/GSA.md`: the recipe gives the design of the paper (4,096 runs, `--m 12`) and marks the runs
-  with powers uniform in watts as an optional check that the final analysis no longer uses.
+  with powers uniform in watts as an optional check that the final analysis no longer uses, and
+  runs `gsa.validation` before `gsa.tables`, which reads its files for `tab_validation` and
+  `tab_country_bands` (in the earlier order the two tables were skipped with a message).
 
 ### Fixed (26 November 2026)
 
