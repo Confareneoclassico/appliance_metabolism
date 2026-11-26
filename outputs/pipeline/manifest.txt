@@ -1,0 +1,22 @@
+copied   cluster_summary.csv
+copied   cluster_mean_profiles.csv
+copied   cluster_stability.csv
+copied   consolidated_anova_stats.csv
+copied   consolidated_chi2_stats.csv
+copied   consolidated_circular_stats.csv
+copied   stratified_cluster_mean_profiles.csv
+copied   same_activity_by_diarists.csv
+copied   activity_combination_counts.csv
+copied   shared_activities_frequency.csv
+copied   country_comparison_summary.csv
+copied   country_daytype_combined_summary.csv
+copied   mean_profiles_country_daytype.csv
+copied   peak_power_daytype_comparison.csv
+copied   working_days_cross_country.csv
+copied   non_working_days_cross_country.csv
+copied   cluster_energy_profiles_10min_combined.png
+copied   cluster_energy_profiles_10min_panels.png
+copied   country_cluster_profiles_small_multiples.png
+copied   elbow_method_improved.png
+copied   country_daytype_profiles_small_multiples.png
+copied   log_extract.txt (289 lines of run_log.txt, 269 lines of run_log_stage05.txt; read it before sharing)

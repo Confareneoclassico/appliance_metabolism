@@ -1,7 +1,7 @@
 {
   "title": "HETUS household electricity profiling pipeline",
   "upload_type": "software",
-  "description": "<p>Python pipeline that derives household electricity demand profiles at 10-minute resolution from the 2010 wave of the Harmonised European Time Use Surveys (HETUS) for 15 countries, clusters them globally, by day type, by country and by country and day type, and validates the clusters statistically. It accompanies the article \"Deriving Household Electricity Profiles from European Time-Use Surveys: A Multi-Level Clustering Approach Linking Appliance Use, Activity Patterns, and Sociodemographic Drivers\".</p><p>The outputs folder holds the aggregate results behind the article's tables and figures, under Eurostat's publication rules for HETUS. The HETUS microdata are Eurostat scientific use files under restricted access and are not included.</p><p>The results are based on data from Eurostat, Harmonised European Time Use Surveys (HETUS), 2010 wave, scientific use files, release of November 2020. The responsibility for all conclusions drawn from the data lies entirely with the author.</p><p>Version 1.0.1 withdraws outputs/stratified_cluster_mean_profiles.csv, the columns largest_cluster_size and largest_cluster_pct of outputs/country_daytype_combined_summary.csv and the rows of the stratified solutions in outputs/consolidated_circular_stats.csv, from which the sizes of small clusters could be derived. The code and the results quoted in the article are unchanged (CHANGELOG.md, docs/PIPELINE.md Section 3.14).</p>",
+  "description": "<p>Python pipeline that derives profiles of the activity-associated appliance load of households at 10-minute resolution from the 2010 wave of the Harmonised European Time Use Surveys (HETUS) for 15 countries, clusters them globally, by day type, by country and by country and day type, validates the clusters statistically, and propagates 21 modelling choices through the whole pipeline in a global sensitivity analysis of 4,096 runs. It accompanies the article \"Activity-Associated Appliance-Load Profiles of European Households from Time-Use Surveys: Multi-Level Clustering, Drivers and Robustness\" (first submitted as \"Deriving Household Electricity Profiles from European Time-Use Surveys: A Multi-Level Clustering Approach Linking Appliance Use, Activity Patterns, and Sociodemographic Drivers\").</p><p>The outputs folder holds the aggregate results behind the article's tables and figures, under Eurostat's publication rules for HETUS: the exports of the canonical run, the checks on the microdata for the revision, and the outputs and analysis of the sensitivity analysis. The HETUS microdata are Eurostat scientific use files under restricted access and are not included.</p><p>The results are based on data from Eurostat, Harmonised European Time Use Surveys (HETUS), 2010 wave, scientific use files, release of November 2020. The responsibility for all conclusions drawn from the data lies entirely with the author.</p><p>Version 1.1.0 corrects the issues found by the audit of November 2026 and adds the sensitivity analysis and the checks of the revision (CHANGELOG.md). The results of the run of 14 October 2026, quoted in the first submission, are in versions 1.0.0 and 1.0.1.</p>",
   "creators": [
     {
       "name": "Lo Piano, Samuele",
@@ -11,10 +11,12 @@
   ],
   "keywords": [
     "household energy profiles",
+    "activity-associated appliance load",
     "time-use surveys",
     "HETUS",
     "clustering",
-    "demand-side management"
+    "demand-side management",
+    "global sensitivity analysis"
   ],
   "license": "MIT",
   "access_right": "open",

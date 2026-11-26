@@ -5,12 +5,15 @@
 Reproducible pipeline that derives household electricity demand profiles at
 10-minute resolution from the Harmonised European Time-Use Survey (HETUS),
 clusters them globally, by day type, by country and by country and day type,
-and validates the clusters statistically. It underpins the manuscript
-"Deriving Household Electricity Profiles from European Time-Use Surveys: A
-Multi-Level Clustering Approach Linking Appliance Use, Activity Patterns, and
-Sociodemographic Drivers". `docs/PIPELINE.md` gives the full data-flow
-reference, and the manuscript's Data and Methods sections give the
-methodology.
+and validates the clusters statistically, with a global sensitivity analysis
+of the modelling choices (`gsa/`). It underpins the manuscript
+"Activity-Associated Appliance-Load Profiles of European Households from
+Time-Use Surveys: Multi-Level Clustering, Drivers and Robustness" (first
+submitted as "Deriving Household Electricity Profiles from European Time-Use
+Surveys: A Multi-Level Clustering Approach Linking Appliance Use, Activity
+Patterns, and Sociodemographic Drivers"). `docs/PIPELINE.md` gives the full
+data-flow reference, `docs/GSA.md` the sensitivity analysis, and the
+manuscript's Data and Methods sections the methodology.
 
 ## Quick start
 
@@ -69,8 +72,8 @@ row per household-day). Its `manifest.txt` lists what was copied, refused or
 missing, and `log_extract.txt` keeps the lines of the saved console log with
 solution-level figures only (PCA, WCSS, the choice of K).
 
-The global sensitivity analysis of the revision (21 modelling choices, 11
-outputs, 1,024 runs) is in `gsa/` and described in `docs/GSA.md`. It builds
+The global sensitivity analysis of the revision (21 modelling choices, 12
+outputs, 4,096 runs) is in `gsa/` and described in `docs/GSA.md`. It builds
 its inputs from a canonical run on the machine that holds the microdata,
 checks that its model reproduces the pipeline at the values of that run, and
 collects only aggregate outputs for sharing:
@@ -78,9 +81,15 @@ collects only aggregate outputs for sharing:
 ```bash
 python3 -m gsa.bundle --out ~/hetus_gsa/bundle          # inputs (microdata, stay here)
 python3 -m gsa.check --bundle ~/hetus_gsa/bundle        # model against the run
-python3 -m gsa.run --bundle ~/hetus_gsa/bundle --runs ~/hetus_gsa/runs --workers 4 --threads 2
+python3 -m gsa.run --bundle ~/hetus_gsa/bundle --runs ~/hetus_gsa/runs --m 12 --workers 4 --threads 2
 python3 -m gsa.collect --runs ~/hetus_gsa/runs          # files to share
 ```
+
+The checks on the microdata that the sensitivity analysis cannot make (the
+same households on both day types, the drivers with households resampled, the
+stability of the stratified solutions and other clustering methods) run in one
+command, `python3 tools/reviewer_checks.py --bundle ~/hetus_gsa/bundle`
+(`docs/PIPELINE.md` Section 3.19).
 
 Every stage takes its file locations from `pipeline/paths.py`, which resolves
 them from the repository root, so a stage can be run from any directory
@@ -138,18 +147,27 @@ internals are unchanged except for the corrections listed in
 │   ├── check.py               The model against the run it comes from
 │   ├── run.py                 The runs of the sample (parallel, resumable)
 │   ├── collect.py             The outputs that may be shared
+│   ├── reseed.py              Runs again with the seeds redrawn
 │   ├── estimators.py          Sobol', Shapley and optimal-transport indices
-│   └── convergence.py         Bootstrap, dummies and convergence
+│   ├── convergence.py         Bootstrap, dummies and convergence
+│   ├── analyse.py             The analysis of the shared outputs (no microdata)
+│   ├── validation.py          Agreement with measured profiles, bands by country
+│   ├── figures.py, tables.py  Figures and tables of the paper and its SI
 ├── tests/                     Tests on synthetic data (python -m pytest tests)
 ├── tools/collect_exports.py   Copies the exports that may be shared
+├── tools/reviewer_checks.py   Runs the checks on the microdata in one command
+│                              (paired_day_types.py, driver_robustness.py,
+│                              clustering_robustness.py, run_folder.py)
+├── tools/pca_summary.py       Principal components of the global solution
 ├── tools/compare_stage03.py   Compares Stage 03 with a reference run, value by value
 ├── archive/
 │   ├── clustering_analysis_v1_2025-11-26_SUPERSEDED_BY_05.py
 │   └── statistical_validation_v1_UNPATCHED_no_cramers_v_SUPERSEDED_BY_07.py
-├── outputs/                   Aggregate results quoted in the manuscript
-│                              (run of 14 October 2026, no microdata,
-│                              under Eurostat's publication rules, with
-│                              the withdrawals of version 1.0.1)
+├── outputs/                   Aggregate results quoted in the revised
+│                              manuscript (canonical run of 20 November 2026,
+│                              checks, sensitivity analysis; no microdata,
+│                              under Eurostat's publication rules; see
+│                              outputs/README.md)
 ├── data/HETUS_mapped_data.csv Lookup table from activity to appliance power
 │                              and metabolic rate
 ├── data/raw/                  Raw inputs (not tracked)
@@ -173,20 +191,22 @@ The October 2026 corrections (column names aligned across national files,
 the kind-of-day variable `DDV7` used for the day type, daily energy expressed
 in Wh rather than as a sum of W, times of day counted from the 04:00 start of
 the HETUS diary day, and clustering on the power profiles only) are all in
-the run of 14 October 2026, which the manuscript quotes. Its aggregate
-results are in `outputs/`, under Eurostat's publication rules for HETUS
-(`docs/PIPELINE.md` Section 3.13). Section 5 of the same file lists the output
-behind every quantitative claim.
+the run of 14 October 2026, which the first submission of the manuscript
+quotes, and in every later run. Section 5 of the same file lists the output
+behind every quantitative claim of the revised manuscript.
 
-Version 1.0.1 withdraws `outputs/stratified_cluster_mean_profiles.csv`, two
+Version 1.0.1 withdrew `outputs/stratified_cluster_mean_profiles.csv`, two
 columns of `outputs/country_daytype_combined_summary.csv` and the stratified
-rows of `outputs/consolidated_circular_stats.csv`, from which the sizes of
-small clusters could be derived (`CHANGELOG.md`, `docs/PIPELINE.md` Section
-3.14). The code and the results quoted in the manuscript are unchanged.
-The issues found by the audit of November 2026 are corrected for version
+rows of `outputs/consolidated_circular_stats.csv` of that run, from which the
+sizes of small clusters could be derived (`CHANGELOG.md`, `docs/PIPELINE.md`
+Section 3.14).
+The issues found by the audit of November 2026 are corrected in version
 1.1.0 (`docs/PIPELINE.md` Section 3.15, `CHANGELOG.md`), each with a test in
-`tests/`; the outputs of the corrected pipeline on the microdata will replace
-those in `outputs/` with that version.
+`tests/`. From that version, `outputs/` holds the results of the corrected
+pipeline on the microdata (the canonical run of 20 November 2026), the checks
+for the revision and the outputs of the sensitivity analysis, which the
+revised manuscript quotes; the results of the run of 14 October 2026 remain in
+versions 1.0.0 and 1.0.1 of the archive.
 
 ## License
 
@@ -201,8 +221,10 @@ remain subject to Eurostat's conditions of access.
 
 If you use this pipeline, please cite the accompanying manuscript (full
 citation to be added on publication), the archived version of this
-repository on Zenodo (all versions: https://doi.org/10.5281/zenodo.23412741,
-version 1.0.0: https://doi.org/10.5281/zenodo.23412742),
+repository on Zenodo (all versions: https://doi.org/10.5281/zenodo.23412741;
+version 1.0.0: https://doi.org/10.5281/zenodo.23412742; version 1.0.1:
+https://doi.org/10.5281/zenodo.24368824; version 1.1.0: the DOI of its record
+under the same concept DOI),
 and the HETUS data source: Eurostat,
 Harmonised European Time Use Surveys (HETUS), 2010 wave, scientific use files,
 release of November 2020.

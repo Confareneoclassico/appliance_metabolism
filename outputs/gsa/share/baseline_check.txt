@@ -1,0 +1,9 @@
+ok    solutions found in the run: 48 of 48
+ok    identical labels in 48 of 48 solutions, same K in 48, smallest adjusted Rand index 1.000000
+ok    Cramer's V: 681 published tests compared, largest difference 0.00e+00, 0 tests published by only one of the two
+ok    day types: 15 countries, largest difference in the change of the coincident peak 0.00e+00 and of the mean own peak 8.88e-16 percentage points
+ok    mean profiles: 48 profiles, largest relative difference 0.00e+00
+ok    peak times: 8 global groups, largest difference in the circular SD 3.11e-15 rad
+
+Outputs at the baseline: Y1 = 0.598, Y2 = 0.07095, Y2b = 4.691, Y3 = 18.53, Y4 = 8.228, Y5 = 0.1765, Y6 = 33, Y7 = 0.4515, Y8 = 1, Y9 = 0.7722, Y10 = 0.812, Y11 = 0.7858; strongest bias-corrected correlate HHC5; global K 8; 16 of 48 solutions with the fallback K
+Run in 117 s; 0 check(s) failed.

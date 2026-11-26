@@ -1,0 +1,18 @@
+Sample: scrambled Sobol' sequence, seed 20261119, up to 2^8 points; powers uniform in W; K-means n_init 20; bundle of 191,740 household-days built 2026-11-20 13:50:17
+Runs present: 256 (0-255); complete nested designs: 128, 256
+Seconds per run: median 40, largest 120
+Y1: 0 missing, range 0.2808 to 0.8852
+Y2: 0 missing, range 0 to 0.1249
+Y2b: 0 missing, range 4.562 to 5.292
+Y3: 0 missing, range -6.035 to 20.22
+Y4: 0 missing, range 3.606 to 25.19
+Y5: 0 missing, range 0.1662 to 0.4291
+Y6: 0 missing, range 0 to 38
+Y7: 0 missing, range 0.4312 to 1.061
+Y8: 0 missing, range 0.09333 to 0.7605
+Y9: 0 missing, range 0.7496 to 0.9541
+Y10: 0 missing, range 0.779 to 0.9514
+Y11: 0 missing, range 0.728 to 1.52
+Solutions with a strongest correlate, by run: 48 in 256 runs
+Profiles of fewer than 50 household-days left empty: 0
+Every value is an aggregate over at least 50 household-days; no microdata.

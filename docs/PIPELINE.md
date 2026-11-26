@@ -704,40 +704,53 @@ all analyses and flags them wherever they affect a comparison.
 
 ## 5. Manuscript claims and the files that support them
 
-Status refers to the energy-only run of 14 October 2026 (Section 3.12), which
-the manuscript quotes throughout (from v6). Its aggregate results are in
-`outputs/`. The diarist coincidence results, the national
-daily energy, peak power and peak times, and the comparisons of working and
-non-working days do not depend on the clustering and are identical to those
-of the run of 11 October 2026.
+Status refers to version 1.1.0, which the revised manuscript quotes
+throughout: the canonical run of 20 November 2026 (Sections 3.15 to 3.18),
+the checks of 26 November 2026 (Section 3.19) and the global sensitivity
+analysis of 4,096 runs (`docs/GSA.md`). The files are in `outputs/`, whose
+README describes its folders. The results of the run of 14 October 2026,
+quoted in the first submission, are in versions 1.0.0 and 1.0.1 of the
+archive. Section numbers are those of the revised manuscript, and S numbers
+those of its Supporting Information.
 
-| Claim | Source file | Status |
+| Claim (section) | Source file in `outputs/` | Value |
 |---|---|---|
-| ANOVA F-statistics, all levels | `consolidated_anova_stats.csv` | Refreshed (global F = 40,946.7, working days 52,289.7, non-working days 30,913.5, smallest 287.9) |
-| Chi-squared and Cramér's V, all levels | `consolidated_chi2_stats.csv` | Refreshed (48 strata). Compared with the 11 October run: median ratio of V 0.97 over 684 pairs |
-| PCA variance shares, component count, elbow K | Stage 05 console log | Refreshed (144 slots reduced to 91 components at 95%, 40 at 80%, 66 at 90%, knee detected at K = 9) |
-| Share of retained variance between clusters (22.5%) | Stage 05 console log | 1 - WCSS(K = 9) / (cumulative variance at 91 components x 144 x 192,268) |
-| Global cluster sizes and modal categories | `cluster_summary.csv` | Refreshed (K = 9) |
-| Global cluster daily energy, mean daily peak and coincident peak | `cluster_summary.csv`, `cluster_mean_profiles.csv` | Refreshed (coincident peaks now read from the file, not from Figure 2) |
-| Circular peak-time statistics | `consolidated_circular_stats.csv` | Refreshed (466 zero-demand days, all in Cluster 0). Global solution only from version 1.0.1 (Section 3.14) |
-| Stability of the global solution | `cluster_stability.csv`, Stage 05 console log (ARI of each half-sample) | New (silhouette 0.13, mean ARI 0.89, Jaccard 0.69 to 0.95) |
-| Day-type shares and day-type clustering | Stage 06 console log, `DayType_Analysis/` | Refreshed (100,306 working and 91,962 non-working household-days, K = 4 and 6) |
-| Coincident and mean daily peaks by country and day type | `mean_profiles_country_daytype.csv`, `peak_power_daytype_comparison.csv`, Stage 06 console log | New (coincident peak higher on non-working days in 15 of 15 countries) |
-| Per-country K, daily energy, peaks and peak times | `country_comparison_summary.csv` | Refreshed (K between 4 and 7) |
-| Country-by-day-type comparison (energy, peak, peak time, K) | `country_daytype_combined_summary.csv` | Refreshed |
-| Recurring profile shapes in the national solutions | `stratified_cluster_mean_profiles.csv` | Checked for all 15 countries (Figure S2). Not published from version 1.0.1 (Section 3.14) |
-| Diarist coincidence percentages | `same_activity_by_diarists.csv` | Stage 09 rewritten for version 1.1.0 (Section 3.15, D3); the figures of the manuscript, from an unpublished version, will be replaced by those of the run on the microdata |
-| Shared activity counts (sleep, TV, eating) | `shared_activities_frequency.csv`, `activity_combination_counts.csv` | Stage 09 rewritten for version 1.1.0 (Section 3.15, D3): each diarist counted once per code, at home only |
+| Household-days analysed and the same-day rule (2.1, 2.7, Table 1) | `pipeline/country_comparison_summary.csv`; `pipeline/run_log_extract.txt` (`[same-day rule]` lines) | 191,740 household-days; 528 of 192,268 left out |
+| Household-days with two or more diarists by country (Table 1) | `checks/driver_robustness.csv` (rows `HHC5 \| diarists 1` of the country solutions, counts rounded to ten) | 34% (PL) to 71% (EL), 44% overall |
+| Mean power and daily energy (2.7) | `pipeline/cluster_summary.csv` (size-weighted mean of `avg_daily_energy_wh`) | 99 W, 2.38 kWh |
+| Diarist coincidence (2.8) | `pipeline/same_activity_by_diarists.csv`, `activity_combination_counts.csv`, `shared_activities_frequency.csv` | mean 70.4% over 84,351 household-days, 68.7 to 90.1% by number of diarists; 89.8, 7.8 and 2.4% of the shared pairs; sleep 4.05 million, television 0.85 million, eating 0.57 million |
+| Principal components (3.2) | `pipeline/run_log_extract.txt`; `checks/pca_summary.txt` | 91 components at 95% (68 to 106 in the stratified solutions), 40 and 66 at 80 and 90%; first five 8.23, 7.22, 4.91, 4.61 and 3.95% |
+| Elbow, knee and fallbacks (3.3, 4.1, S10.4) | `pipeline/run_log_extract.txt`; `pipeline/stratified_cluster_mean_profiles.csv` (`k`, `k_selection`) | WCSS 24.8 to 18.5 million; knee at K = 8; fallback K = 4 in 16 of the 47 stratified solutions |
+| Small clusters reported with the largest of their solution (3.4, 4.3) | `pipeline/stratified_cluster_mean_profiles.csv` (`n_small_clusters_merged`) | 45 of the 233 stratified clusters |
+| Tests withheld or flagged (3.4) | `pipeline/consolidated_chi2_stats.csv` (`Publication_Class`) | 3 withheld (household income, Serbia), 5 flagged |
+| Global clusters: sizes, energy, peaks, modal categories (4.1, Table 4) | `pipeline/cluster_summary.csv` | 8 clusters of 53 to 114,663 household-days |
+| Mean profiles and sample-coincident peaks of the clusters (4.1, Figure 2) | `pipeline/cluster_mean_profiles.csv`, `cluster_summary.csv` | |
+| Circular statistics of the peak time (4.1, Table 5) | `pipeline/consolidated_circular_stats.csv` | weighted mean SD 4.69 h; 469 household-days without demand |
+| Stability and separation of the global solution (4.1) | `pipeline/cluster_stability.csv` | ARI 0.82 (0.67 to 0.92), silhouette 0.16, mean Jaccard 0.41 to 0.92 |
+| Share of the retained variance between clusters (4.1) | `pipeline/run_log_extract.txt` (WCSS at K = 8) | about 21%, 1 - WCSS / (0.95 x 144 x 191,740) |
+| Stability of the stratified solutions, other methods (3.5, 4.1, S10.3) | `checks/clustering_robustness.csv` | ARI 0.60 to 0.95 (median 0.81); without PCA 0.90, Ward 0.40, Gaussian mixture 0.04 |
+| ANOVA (4.1, 4.2) | `pipeline/consolidated_anova_stats.csv` | F = 45,629.2 (global), 45,863.6 (working), 38,214.8 (non-working) |
+| Day types: sizes and K (4.2) | `pipeline/mean_profiles_country_daytype.csv` (`n`); `pipeline/stratified_cluster_mean_profiles.csv` | 100,046 and 91,694 household-days; K = 4 (fallback) and 5 |
+| Sample-coincident and mean daily peaks by country and day type (4.2, Table 6, Figure 3) | `pipeline/mean_profiles_country_daytype.csv`, `peak_power_daytype_comparison.csv` | rise in 15 of 15 countries, median 18.5% |
+| The same households on both day types (4.2, S10.1) | `checks/paired_daytype_comparison.csv`, `paired_daytype_comparison_ddv1.csv` | 57,850 households in 12 countries; 22.8% (20.7 to 25.1) pooled |
+| Countries: K, energy, peaks and their times (4.3, Figure 4) | `pipeline/country_comparison_summary.csv`, `country_daytype_combined_summary.csv` | |
+| Recurring profile shapes in the national solutions (5.1, Figure A2) | `pipeline/stratified_cluster_mean_profiles.csv` | |
+| Associations with the background variables (4.4, Tables 8 and 9) | `pipeline/consolidated_chi2_stats.csv` (Chi-squared, plain V); `checks/driver_robustness.csv`, `driver_summary.csv` (corrected V, household intervals, one household-day per household, missing answers as a category, number of diarists, number of adults within each number of diarists) | number of adults 0.177 (0.172 to 0.181) on the global solution |
+| Outputs over the runs and percentiles of the canonical run (4.5, Table 10) | `gsa/results/summary.csv`; `gsa/share/gsa_outputs.csv` | |
+| Total, first-order and OT indices, seeds (4.5, Figure 5, S5, S6) | `gsa/results/totals.csv`, `indices.csv`, `seeds.csv` | |
+| Variance budget (4.5, S8) | `gsa/results/budget.csv`, `first_order_sums.csv`, `totals_check.csv` | |
+| Convergence (4.5, S7) | `gsa/results/convergence_indices.csv`, `convergence_totals.csv` | |
+| Agreement with the measured profiles (4.5, Table 11, Figure 7) | `gsa/results/validation_metrics.csv`, `profile_bands.npz` | |
+| Bands of energy and sample-coincident peak by country (4.3, Table 7, S2) | `gsa/results/country_bands.csv` | 2.38 kWh (runs 1.82 to 4.99), 236 W (runs 145 to 355) |
 | Country code mapping, exclusion of Germany | author confirmation | Verified |
 | `INC4_1` categories | Eurostat (pers. comm., 2026) | Eight categories, not the five in the published list |
 | `IND44` meaning | SUF Annex 2 | Permanent or fixed-term contract (employees only, not collected in NO) |
 
-The aggregate files in `outputs/` contain no microdata and follow the
-publication rules of Section 3.13, with the withdrawals of Section 3.14. The files of the run of 14 October 2026
-were brought under these rules after the run, with the same functions the
-stages now apply. The rows that join each largest cluster with the withheld
-clusters of its solution were computed from the mean of the stratum minus the
-other clusters, which the aggregates of that run hold exactly.
+The aggregate files in `outputs/` contain no microdata. Every one of them
+passed the publication rules of `pipeline/disclosure.py` (Sections 3.13 to
+3.15, with Option A of Section 3.15: every cluster of fewer than 50
+household-days is reported together with the largest cluster of its
+solution) before it left the machine that holds the microdata.
 
 ## 6. Notes on the data documentation
 

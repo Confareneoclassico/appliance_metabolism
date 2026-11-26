@@ -1,0 +1,19 @@
+Sample: scrambled Sobol' sequence, seed 20261119, up to 2^12 points; powers log-uniform; K-means n_init 20; bundle of 191,740 household-days built 2026-11-20 13:50:17
+Reruns of points of the sample (gsa.reseed, variant kmeans): X21 redrawn, stream seed 20261124; the run index is that of the point; points present: 256 (0-255)
+Seconds per run: median 39, largest 99
+Y1: 0 missing, range 0.2755 to 0.8921
+Y2: 0 missing, range 0 to 0.1533
+Y2b: 0 missing, range 4.551 to 5.297
+Y3: 0 missing, range -6.237 to 20.41
+Y4: 0 missing, range 4.123 to 26.3
+Y5: 0 missing, range 0.1638 to 0.4245
+Y6: 0 missing, range 0 to 37
+Y7: 0 missing, range 0.4323 to 1.054
+Y8: 0 missing, range 0.08965 to 0.7701
+Y9: 0 missing, range 0.7512 to 0.9536
+Y10: 0 missing, range 0.78 to 0.953
+Y11: 0 missing, range 0.7276 to 1.555
+Library versions: {"numpy": "2.5.5", "python": "3.14.10", "scikit-learn": "1.9.1", "scipy": "1.18.1"} in 256 runs
+Solutions with a strongest correlate, by run: 48 in 256 runs
+Profiles of fewer than 50 household-days left empty: 0
+Every value is an aggregate over at least 50 household-days; no microdata.

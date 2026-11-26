@@ -1,0 +1,13 @@
+tools/pca_summary.py on the processed folder of the canonical run of 20 November 2026
+(run on 26 November 2026; aggregates over all household-days only)
+
+  191,740 household-days, 48 solutions (1 global, 47 stratified)
+
+Components for 80, 90 and 95% of the variance: 40, 66, 91
+
+First components (share of variance, largest absolute loading and its block):
+  1: 8.23%, largest at 11:40, block 08:10 to 18:50
+  2: 7.22%, largest at 02:40, block 00:00 to 03:50
+  3: 4.91%, largest at 22:20, block 19:20 to 23:50
+  4: 4.61%, largest at 16:40, block 15:00 to 18:10
+  5: 3.95%, largest at 14:40, block 13:10 to 15:50
