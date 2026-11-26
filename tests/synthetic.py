@@ -197,3 +197,36 @@ def write_raw_gsa(folder, countries=("BE", "FR", "NL"), n_households=130, seed=7
     rng = np.random.default_rng(seed)
     for c in countries:
         raw_country_gsa(n_households, rng, c).to_csv(folder / f"{c}.csv", index=False)
+
+
+def raw_country_two_days(n_households, rng, country, share_two=0.8):
+    """Households of one to three diarists who keep a diary on a weekday
+    (DIARY 1) and, for `share_two` of the households, also on a weekend day
+    (DIARY 2), as in most HETUS countries; the employed work on the weekday
+    only, so the two day types differ within the same households."""
+    sizes = GSA_SIZES.get(country, (2,))
+    rows = []
+    for h in range(1, n_households + 1):
+        size = sizes[h % len(sizes)]
+        weekday = {"country": country, "size": size, "year": 2010, "month": int(rng.integers(1, 13)),
+                   "ddv1": int(rng.integers(2, 7)), "ddv7_work": 1, "hhq5": int(rng.integers(1, 3)),
+                   "income": int(rng.integers(1, 11)), "hhc3": int(rng.integers(0, 2)),
+                   "hhc4": int(rng.integers(0, 3)), "hhc5": 1 if size == 1 else 2,
+                   "hhq6c": int(rng.random() < 0.9), "hhq6h": 1, "hhq6o": 1, "tv": 0.4 + 0.15 * size}
+        days = [(1, weekday)]
+        if rng.random() < share_two:
+            days.append((2, {**weekday, "ddv1": int(rng.choice([1, 7])), "ddv7_work": 3,
+                             "tv": min(1.0, weekday["tv"] + 0.3)}))
+        for diary, house in days:
+            for p in range(1, size + 1):
+                row = gsa_person(rng, h, p, house, adult=(p <= 2))
+                row["DIARY"] = diary
+                rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def write_raw_two_days(folder, countries=("BE", "FR", "NL"), n_households=120, seed=11):
+    """Raw files with two diary days for most households (tools/ checks)."""
+    rng = np.random.default_rng(seed)
+    for c in countries:
+        raw_country_two_days(n_households, rng, c).to_csv(folder / f"{c}.csv", index=False)

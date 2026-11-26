@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+### Fixed (26 November 2026, checks for the reviewers)
+
+- `tools/driver_robustness.py` matched no country solution of Stage 06 on a real run (the
+  household file codes the countries, the solution files name them) and failed with a pandas
+  error when the processed folder held no solutions; `tools/clustering_robustness.py` then wrote
+  an empty table and `tools/collect_exports.py` failed on it. The scripts now check the folder
+  first and stop with a message, the collector refuses empty tables, and the paired comparison
+  names its countries and keeps all its columns.
+- New `tools/reviewer_checks.py` (one command: `--bundle ~/hetus_gsa/bundle` or `--processed`)
+  and `tools/run_folder.py`; `collect_exports.py --checks`; end-to-end tests on a synthetic run
+  with two diary days (`tests/test_reviewer_checks.py`).
+
 Checks for the reviewers: `tools/paired_day_types.py` (working and
 non-working days of the same households), `tools/driver_robustness.py`
 (Cramer's V corrected for bias, households resampled, one day per household,

@@ -6,8 +6,9 @@ on one day type only. This script repeats the comparison on the households
 that kept diaries on both, so that the day type changes and the households
 do not:
 
-    python3 tools/paired_day_types.py [--processed FOLDER] [--out FOLDER]
-                                      [--day-type ddv7|ddv1] [--boot 1000]
+    python3 tools/paired_day_types.py [--processed FOLDER | --bundle BUNDLE]
+                                      [--out FOLDER] [--day-type ddv7|ddv1]
+                                      [--boot 1000]
 
 It reads household_interval_timeseries.csv of Stage 03 (identifiers, DDV1,
 DDV7 and the power of every slot) from the processed folder of a run, so it
@@ -49,8 +50,10 @@ from scipy.stats import wilcoxon
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "pipeline"))
+sys.path.insert(0, str(ROOT / "tools"))
 
 from disclosure import MIN_N_PUBLISH, MIN_N_UNFLAGGED, round_size, size_class  # noqa: E402
+from run_folder import check, country_names, describe, resolve  # noqa: E402
 
 SLOTS = 144
 ENERGY = [f"Household_Energy_W_{t}" for t in range(SLOTS)]
@@ -98,6 +101,7 @@ def load(processed, rule="ddv7"):
         ids.append(ch[["HID", "DIARY", "COUNTRY", "DDV1", "DDV7"]])
         power.append(ch[ENERGY].to_numpy(dtype=np.float32))
     ids = pd.concat(ids, ignore_index=True)
+    ids["COUNTRY"] = country_names(ids.COUNTRY)          # codes of Stage 01 -> names of Stage 06
     ids["day_type"] = day_type(pd.to_numeric(ids.DDV7, errors="coerce"),
                                pd.to_numeric(ids.DDV1, errors="coerce"), rule)
     return ids, np.vstack(power)
@@ -149,6 +153,20 @@ def boot_changes(pw, pn, kw, kn, ew, en, B, rng, batch=100):
         coinc = change((w @ pn).max(axis=1), (w @ pw).max(axis=1))
         out.append(np.column_stack([coinc, change(w @ kn, w @ kw), change(w @ en, w @ ew)]))
     return np.vstack(out)
+
+
+COLUMNS = ["country", "n_paired_households", "N_Class",
+           "all_coincident_w", "all_coincident_nw", "all_own_peak_w", "all_own_peak_nw",
+           "all_energy_w", "all_energy_nw", "all_coincident_change_pct", "all_own_peak_change_pct",
+           "all_energy_change_pct", "share_paired_w_pct", "share_paired_nw_pct",
+           "paired_coincident_w", "paired_coincident_nw", "paired_coincident_time_w",
+           "paired_coincident_time_nw", "paired_own_peak_w", "paired_own_peak_nw",
+           "paired_energy_w", "paired_energy_nw", "paired_coincident_change_pct",
+           "paired_own_peak_change_pct", "paired_energy_change_pct",
+           "paired_coincident_change_lo", "paired_coincident_change_hi",
+           "paired_own_peak_change_lo", "paired_own_peak_change_hi",
+           "paired_energy_change_lo", "paired_energy_change_hi",
+           "own_peak_wilcoxon_p", "energy_wilcoxon_p"]
 
 
 def compare(ids, power, B=1000, seed=20261126):
@@ -209,7 +227,7 @@ def compare(ids, power, B=1000, seed=20261126):
         row["own_peak_wilcoxon_p"] = float(wilcoxon(kn - kw).pvalue) if np.any(kn != kw) else 1.0
         row["energy_wilcoxon_p"] = float(wilcoxon(en - ew).pvalue) if np.any(en != ew) else 1.0
         rows.append(row)
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows).reindex(columns=COLUMNS)
 
 
 def figure(table, path):
@@ -252,15 +270,19 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     parser.add_argument("--processed", type=Path, default=None,
                         help="processed folder of the run (default: that of pipeline/paths.py)")
+    parser.add_argument("--bundle", type=Path, default=None,
+                        help="bundle of the sensitivity analysis whose run to use (its meta.json)")
     parser.add_argument("--out", type=Path, default=None,
                         help="folder for the table (default: Country_DayType_Analysis of the run)")
     parser.add_argument("--figures", type=Path, default=None, help="folder for the figure")
     parser.add_argument("--day-type", choices=["ddv7", "ddv1"], default="ddv7")
     parser.add_argument("--boot", type=int, default=1000, help="resamples of the paired households")
     args = parser.parse_args()
-    from paths import PROCESSED_DIR, COUNTRY_DAYTYPE_DIR, FIGURES_DIR
-    processed = args.processed or PROCESSED_DIR
-    out = args.out or (COUNTRY_DAYTYPE_DIR if args.processed is None else Path(processed) / "Country_DayType_Analysis")
+    from paths import FIGURES_DIR
+    processed = resolve(args.processed, args.bundle)
+    check(processed, solutions=False)
+    print(describe(processed))
+    out = args.out or Path(processed) / "Country_DayType_Analysis"
     figs = args.figures or FIGURES_DIR
     out.mkdir(parents=True, exist_ok=True)
     figs.mkdir(parents=True, exist_ok=True)
@@ -277,6 +299,8 @@ def main():
                   "paired_coincident_change_hi", "all_own_peak_change_pct",
                   "paired_own_peak_change_pct"]].round(1)
     print(show.to_string(index=False))
+    if not table.n_paired_households.notna().any():
+        print(f"\nNo country has {MIN_N_UNFLAGGED} or more households with both day types.")
     print(f"\nWritten to {out / name}. Every value is an aggregate over at least "
           f"{MIN_N_UNFLAGGED} households; countries with fewer paired households show their size "
           "class only.")
