@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Added (26 November 2026)
+
+- `tools/pca_summary.py`: shares of variance and windows of the day of the first principal
+  components of the global clustering, for Section 3.2 of the manuscript (`tests/test_pca_summary.py`).
+
 ### Changed (26 November 2026, variance budget from the model alone)
 
 - `gsa.analyse` part `seeds`: the variance budget splits on the model itself into the
