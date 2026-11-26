@@ -271,6 +271,8 @@ python3 -m gsa.analyse --share ~/hetus_gsa/share --uniform ~/hetus_gsa/share_uni
 python3 -m gsa.figures --results ~/hetus_gsa/results --out ~/hetus_gsa/figures \
     --share ~/hetus_gsa/share
 python3 -m gsa.tables --results ~/hetus_gsa/results --out ~/hetus_gsa/tables
+python3 -m gsa.validation --share ~/hetus_gsa/share --canonical exports_for_sharing \
+    --out ~/hetus_gsa/results
 ```
 
 `--parts` runs a subset (summary, dependence, indices, knn, surrogate,
@@ -338,6 +340,17 @@ total index from the size before (`totals.csv`; about 35 minutes on two
 cores). The total index of a factor on the surrogate holds every term of the
 factor without a seed; its interactions with the seeds are counted with the
 seeds (below).
+
+**Agreement with the measured profiles and bands.** `gsa.validation` reads
+the mean profiles of every run from the share and those of the canonical run
+from its exports, and writes `validation_metrics.csv` (for Belgium and France:
+correlation of the hourly shapes, circular error in the hour of the daily and
+of the evening maximum, normalised RMSE of the hourly profile scaled to a
+daily sum of one, for the canonical run and over the runs) and
+`country_bands.csv` (daily energy and coincident peak per household of every
+country and day type: canonical, median, 5th and 95th percentile). Run it
+before `gsa.tables`, which turns them into `tab_validation.tex` and
+`tab_country_bands.tex`.
 
 **Screening and convergence.** An index reads as non-zero when the 2.5th
 percentile of its bootstrap resamples lies above the 95th percentile of the

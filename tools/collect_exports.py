@@ -56,7 +56,17 @@ EXPORTS = [
      ["n_households_working", "n_households_non_working"], None),
     (COUNTRY_DAYTYPE_DIR, "working_days_cross_country.csv", ["n_households"], None),
     (COUNTRY_DAYTYPE_DIR, "non_working_days_cross_country.csv", ["n_households"], None),
+    # checks for the revision (tools/paired_day_types.py, driver_robustness.py,
+    # clustering_robustness.py), copied when they have been run
+    (COUNTRY_DAYTYPE_DIR, "paired_daytype_comparison.csv", ["n_paired_households"], None),
+    (COUNTRY_DAYTYPE_DIR, "paired_daytype_comparison_ddv1.csv", ["n_paired_households"], None),
+    (PROCESSED_DIR, "driver_robustness.csv", ["N_Observations"], None),
+    (PROCESSED_DIR, "clustering_robustness.csv", [], None),
 ]
+# Optional exports: not listed as missing in the manifest when absent
+OPTIONAL = {"paired_daytype_comparison.csv", "paired_daytype_comparison_ddv1.csv",
+            "driver_robustness.csv", "clustering_robustness.csv",
+            "paired_daytype_comparison.png", "paired_daytype_comparison_ddv1.png"}
 # Figures drawn from the published groups only
 FIGURES = [
     (FIGURES_DIR, "cluster_energy_profiles_10min_combined.png"),
@@ -64,6 +74,8 @@ FIGURES = [
     (FIGURES_DIR, "country_cluster_profiles_small_multiples.png"),
     (FIGURES_DIR, "elbow_method_improved.png"),
     (COUNTRY_DAYTYPE_DIR, "country_daytype_profiles_small_multiples.png"),
+    (FIGURES_DIR, "paired_daytype_comparison.png"),
+    (FIGURES_DIR, "paired_daytype_comparison_ddv1.png"),
 ]
 # Console lines with solution-level figures only, and the tagged lines of
 # Stage 01 (country shares and counts in classes below 50)
@@ -99,7 +111,8 @@ def collect(out, log=None):
     for folder, name, size_cols, profile_test in EXPORTS:
         src = Path(folder) / name
         if not src.is_file():
-            manifest.append(f"MISSING  {name}")
+            if name not in OPTIONAL:
+                manifest.append(f"MISSING  {name}")
             continue
         found = problems(pd.read_csv(src), size_cols, profile_test)
         if found:
@@ -112,7 +125,7 @@ def collect(out, log=None):
         if src.is_file():
             shutil.copy2(src, out / name)
             manifest.append(f"copied   {name}")
-        else:
+        elif name not in OPTIONAL:
             manifest.append(f"MISSING  {name}")
     logs = [] if not log else ([log] if isinstance(log, (str, Path)) else list(log))
     if logs:

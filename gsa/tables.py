@@ -35,6 +35,10 @@ Writes one .tex file per table (booktabs, caption above the table):
   tab_seeds.tex        total indices of the seeds from the reruns, and of the
                        draw of the multipliers by their spread (needs seeds.csv
                        and seed_dispersion.csv)
+  tab_validation.tex   metrics of the agreement with the measured profiles
+                       (needs validation_metrics.csv of gsa.validation)
+  tab_country_bands.tex  daily energy and coincident peak by country with
+                       their bands (needs country_bands.csv of gsa.validation)
   tab_brackets.tex     first-order index, Shapley effect and total index of
                        the surrogate, the appliance powers one by one and as a
                        group (longtable)
@@ -573,26 +577,94 @@ def table_brackets(results, floor=0.05):
 
 
 def table_budget(results):
+    """Variance budget: the part of the factors (the variance of the mean
+    over the seeds, 1 - T_seeds) split into what the surrogate attributes
+    (first-order effects and interactions) and what it does not, and the part
+    of the seeds from the reruns."""
     d = pd.read_csv(results / "budget.csv").set_index("output")
     split = "kmeans" in d.columns
-    head = ("\\toprule\nOutput & First-order & Interactions & "
+    nseed = 3 if split else 1
+    head = ("\\toprule\n & \\multicolumn{4}{c}{Factors (mean over the seeds)} & "
+            f"\\multicolumn{{{nseed}}}{{c}}{{Seeds (reruns of the model)}} \\\\\n"
+            f"\\cmidrule(lr){{2-5}}\\cmidrule(lr){{6-{5 + nseed}}}\n"
+            "Output & First-order & Inter- & Not & Together & "
             + ("K-means & Draw of the & " if split else "")
-            + "Seeds & Not \\\\\n & effects & & " + ("seed & multipliers & " if split else "")
-            + "together & reproduced \\\\\n\\midrule\n")
+            + "Together \\\\\n & effects & actions & attributed & & "
+            + ("seed & multipliers & " if split else "") + "\\\\\n\\midrule\n")
     body = head
     for y in [y for y in OUTPUTS if y in d.index]:
         r = d.loc[y]
-        seeds = f"{num(r.seeds, 2)} ({num(r.seeds_lo, 2)} to {num(r.seeds_hi, 2)})"
-        body += (f"{y} {SHORT[y]} & {num(r.first_order, 2)} & {num(r.interactions, 2)} & "
-                 + (f"{num(r.kmeans, 2)} & {num(r.multipliers, 2)} & " if split else "")
-                 + f"{seeds} & {num(r.error, 2)} \\\\\n")
+        seeds = f"{num(r.seeds, 3)} ({num(r.seeds_lo, 3)} to {num(r.seeds_hi, 3)})"
+        body += (f"{y} {SHORT[y]} & {num(r.first_order, 3)} & {num(r.interactions, 3)} & "
+                 f"{num(r.error, 3)} & {num(1 - r.seeds, 3)} & "
+                 + (f"{num(r.kmeans, 3)} & {num(r.multipliers, 3)} & " if split else "")
+                 + f"{seeds} \\\\\n")
     body += "\\bottomrule\n"
-    return wrap(body, "Variance budget of every output, as shares of Var Y. First-order effects and "
-                "interactions of the factors other than the seeds from the surrogate (the sum of its "
-                "first-order indices, and the share it reproduces less that sum), the total index of the seeds "
-                "on the model from the reruns with the seeds redrawn (Jansen's estimator, 95\\% bootstrap "
-                "interval), and what the surrogate does not reproduce by difference.", "tab:budget",
-                "lrr" + ("rr" if split else "") + "rr", size="\\footnotesize", fit=True)
+    return wrap(body, "Variance budget of every output, as shares of Var Y. The factors other than the "
+                "seeds account for the variance of the mean of the output over the seeds, one less the "
+                "total index of the seeds (Together). The surrogate attributes its first-order effects "
+                "(the sum of its first-order indices) and its interactions (the share it reproduces less "
+                "that sum), and leaves the rest of that variance unattributed. The seeds: their total "
+                "index on the model from the reruns with the seeds redrawn (Jansen's estimator, 95\\% "
+                "bootstrap interval). Each row adds up to one.", "tab:budget",
+                "lrrrr" + ("rrr" if split else "r"), size="\\footnotesize", fit=True)
+
+
+def table_validation(results):
+    """The metrics of the comparison with the measured profiles."""
+    v = pd.read_csv(results / "validation_metrics.csv")
+    names = {"correlation": "Correlation of the hourly shapes",
+             "peak_hour_error_h": "Error in the hour of the daily maximum (h)",
+             "evening_peak_hour_error_h": "Error in the hour of the evening maximum (h)",
+             "nrmse": "Normalised RMSE of the hourly profile",
+             "evening_maximum": "Runs with the daily maximum in the evening"}
+    body = ("\\toprule\nMetric & Canonical & Median & 5th to 95th & Mean absolute \\\\\n"
+            " & run & of the runs & percentile & error \\\\\n\\midrule\n")
+    for c, g in v.groupby("country", sort=False):
+        body += f"\\multicolumn{{5}}{{l}}{{{'Belgium' if c == 'BE' else 'France'}, against {g.benchmark.iloc[0]}}} \\\\\n"
+        for _, r in g.iterrows():
+            if r.metric == "evening_maximum":
+                body += f"\\quad {names[r.metric]} & & {100 * r.share_of_runs:.0f}\\% & & \\\\\n"
+                continue
+            h = r.metric.endswith("_h")
+            f = (lambda x: ("$0$" if round(x) == 0 else f"${x:+.0f}$") if h else f"{x:.2f}")
+            body += (f"\\quad {names[r.metric]} & {f(r.canonical)} & {f(r['median'])} & "
+                     f"{f(r.p05)} to {f(r.p95)} & "
+                     + (f"{r.mean_absolute:.1f}" if h else "") + " \\\\\n")
+        body += "\\addlinespace\n"
+    body += "\\bottomrule\n"
+    return wrap(body, "Agreement of the modelled hourly profile of all days with the measured standard "
+                "load profiles, in the metrics of Reviewer 1: the canonical run and the 4{,}096 runs. "
+                "Hour errors are circular, model less measurement (both measured profiles peak at 19:00), "
+                "and the evening maximum is the largest hourly value from 16:00. The normalised RMSE is "
+                "the root-mean-square difference of the hourly profiles scaled to a daily sum of one, over "
+                "the mean of the measured one.", "tab:validation", "lrrrr", size="\\footnotesize")
+
+
+def table_country_bands(results, day_type="all"):
+    """Daily energy and coincident peak by country with their bands."""
+    b = pd.read_csv(results / "country_bands.csv")
+    b = b[b.day_type == day_type]
+    body = ("\\toprule\n & \\multicolumn{3}{c}{Mean daily energy (kWh)} & "
+            "\\multicolumn{3}{c}{Coincident peak per household (W)} \\\\\n"
+            "\\cmidrule(lr){2-4}\\cmidrule(lr){5-7}\n"
+            "Country & Canonical & Median & 5th to 95th & Canonical & Median & 5th to 95th \\\\\n\\midrule\n")
+    rows = b[b.country != "ALL"].sort_values("country")
+    for part in (rows, b[b.country == "ALL"]):
+        if part is not rows:
+            body += "\\midrule\n"
+        for _, r in part.iterrows():
+            name = "All countries" if r.country == "ALL" else r.country
+            body += (f"{name} & {r.energy_kwh_canonical:.2f} & {r.energy_kwh_median:.2f} & "
+                     f"{r.energy_kwh_p05:.2f} to {r.energy_kwh_p95:.2f} & "
+                     f"{r.coincident_peak_w_canonical:.0f} & {r.coincident_peak_w_median:.0f} & "
+                     f"{r.coincident_peak_w_p05:.0f} to {r.coincident_peak_w_p95:.0f} \\\\\n")
+    body += "\\bottomrule\n"
+    return wrap(body, "Mean daily energy and coincident peak per household (maximum of the mean "
+                "profile) of every country over all days: the canonical run, and the median and "
+                "5th to 95th percentile of the 4{,}096 runs, which add lighting, a base load and the "
+                "run-on of washing machines to the activity-associated load and vary the other "
+                "factors.", "tab:country_bands", "lrrrrrr", size="\\footnotesize")
 
 
 def main(argv=None):
@@ -608,7 +680,8 @@ def main(argv=None):
                     ("stability", table_stability), ("distributions", table_distributions),
                     ("ot_agreement", table_ot_agreement), ("ot_excess", table_ot_excess),
                     ("brackets", table_brackets), ("budget", table_budget), ("totals", table_totals),
-                    ("convergence_totals", table_convergence_totals), ("seeds", table_seeds)):
+                    ("convergence_totals", table_convergence_totals), ("seeds", table_seeds),
+                    ("validation", table_validation), ("country_bands", table_country_bands)):
         try:
             (args.out / f"tab_{name}.tex").write_text(f(r))
         except (FileNotFoundError, KeyError, AttributeError) as e:

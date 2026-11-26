@@ -16,8 +16,11 @@ Draws, as PDF:
                        first-order and OT indices at 1,024 runs and at the
                        largest size
   fig_convergence.pdf  total indices of the surrogate (Shapley effects
-                       without totals.csv) of the leading players against the
-                       number of runs
+                       without totals.csv) of every factor against the number
+                       of runs, square-root scale, the factors of 0.05 or more
+                       labelled
+  fig_convergence_s.pdf, fig_convergence_ot.pdf  the same for the first-order
+                       and OT indices of the runs (all 21 factors)
   fig_profiles.pdf     the pooled profile by day type and the hourly shapes of
                        Belgium and France against their measured benchmarks:
                        median and 5th to 95th percentile over the runs
@@ -305,50 +308,85 @@ def fig_adjustment(ind, out):
     plt.close(fig)
 
 
-def fig_convergence(sur, out, tot=None):
-    """The three leading players of every output against the number of runs,
-    with the 95% interval at the largest size: total indices of the surrogate
-    (factors one by one) when tot is given, Shapley effects otherwise."""
-    if tot is not None:
+def convergence_frame(family, ind=None, sur=None, tot=None):
+    """Long table (output, player, N, value, lo, hi) of one family of indices
+    on the nested designs: "T" total indices of the surrogate (factors one by
+    one), "S" and "OT" first-order and OT indices of the runs (all 21
+    factors), "Shapley" Shapley effects of the surrogate."""
+    if family == "T":
         s = tot[(tot.player != "D_cont") & (tot.player != "P_appliances")].rename(columns={"T": "value"})
-    else:
+    elif family == "Shapley":
         s = sur[sur.shapley.notna() & (sur.player != "D_cont")].rename(columns={"shapley": "value"})
+    else:
+        factors = [f"X{i}" for i in range(1, 22)]
+        s = ind[(ind.family == family) & ind.factor.isin(factors)].rename(
+            columns={"factor": "player", "point": "value"})
+    return s[["output", "player", "N", "value", "lo", "hi"]]
+
+
+def fig_convergence(s, out, family="T", name="fig_convergence.pdf", label_at=0.05):
+    """Every factor of every output against the number of runs, with its 95%%
+    interval at the largest size, on a square-root scale so that the indices
+    near zero stay apart. The factors whose index reaches label_at at the
+    largest size are coloured by family and labelled, the others are grey."""
     N = s.N.max()
-    fig, axes = plt.subplots(4, 3, figsize=(7.0, 8.2), sharex=True)
+    sizes = sorted(s.N.unique())
+    fwd = lambda v: np.sqrt(np.clip(v, 0, None))  # noqa: E731
+    inv = lambda v: np.square(v)                   # noqa: E731
+    ticks = [0, 0.01, 0.05, 0.1, 0.25, 0.5, 1.0]
+    fig, axes = plt.subplots(4, 3, figsize=(7.0, 9.0), sharex=True)
     for ax, y in zip(axes.ravel(), OUTPUTS):
         a = s[s.output == y]
-        top = a[a.N == N].sort_values("value", ascending=False).player.head(3).tolist()
+        last = a[a.N == N].set_index("player")
+        order = last.value.sort_values().index.tolist()
+        labelled = [p for p in order[::-1] if last.loc[p, "value"] >= label_at][:7]
         labels = []
-        for p in top:
+        for p in order:                                # grey first, coloured on top
             r = a[a.player == p].sort_values("N")
-            c = family_colour(p) if tot is not None else PLAYER_COLOUR.get(p, MUTED)
-            ax.plot(r.N, r.value, color=c, marker="o", markersize=3, markeredgecolor=SURFACE,
-                    markeredgewidth=0.6)
-            last = r[r.N == N].iloc[0]
-            if np.isfinite(last.lo):
-                ax.plot([N, N], [last.lo, last.hi], color=c, linewidth=1.0)
-            labels.append([last.value, PLAYER_LABEL[p].strip().split(" (")[0]])
-        # direct labels, pushed apart where the effects are close
+            hot = p in labelled
+            c = family_colour(p) if hot else MUTED
+            if hot and c == MUTED:
+                c = TEXT2
+            ax.plot(r.N, r.value, color=c, linewidth=1.3 if hot else 0.7, alpha=1.0 if hot else 0.55,
+                    marker="o" if hot else None, markersize=2.6, markeredgecolor=SURFACE,
+                    markeredgewidth=0.5, zorder=3 if hot else 2)
+            lo, hi = last.loc[p, "lo"], last.loc[p, "hi"]
+            if np.isfinite(lo) and np.isfinite(hi):
+                ax.plot([N, N], [max(lo, 0), max(hi, 0)], color=c, linewidth=0.9 if hot else 0.6,
+                        alpha=1.0 if hot else 0.55, zorder=3 if hot else 2)
+            if hot:
+                labels.append([float(fwd(last.loc[p, "value"])), PLAYER_LABEL[p].strip().split(" (")[0]])
+        # direct labels, pushed apart on the square-root scale
         labels.sort()
-        for i in range(1, len(labels)):
-            labels[i][0] = max(labels[i][0], labels[i - 1][0] + 0.08)
+        for k in range(1, len(labels)):
+            labels[k][0] = max(labels[k][0], labels[k - 1][0] + 0.056)
         for yl, text in labels:
-            ax.annotate(text, (N, yl), xytext=(6, 0), textcoords="offset points", fontsize=5.5,
+            ax.annotate(text, (N, inv(yl)), xytext=(7, 0), textcoords="offset points", fontsize=5.3,
                         color=TEXT2, va="center")
         ax.set_xscale("log", base=2)
-        sizes = sorted(s.N.unique())
+        ax.set_yscale("function", functions=(fwd, inv))
+        ax.set_yticks(ticks)
+        ax.set_yticklabels(["0", "0.01", "0.05", "0.1", "0.25", "0.5", "1"], fontsize=6)
+        ax.set_ylim(0, 1.0)
         ax.set_xticks(sizes)
         ax.set_xticklabels([f"{n:,}" for n in sizes], fontsize=6, rotation=45, ha="right",
                            rotation_mode="anchor")
         ax.minorticks_off()
-        ax.set_xlim(sizes[0] * 0.8, sizes[-1] * 3.2)
-        ax.set_ylim(min(0, ax.get_ylim()[0]), max(1.0, ax.get_ylim()[1]))
+        ax.set_xlim(sizes[0] * 0.8, sizes[-1] * 3.4)
         ax.set_title(SHORT_OUTPUT[y], loc="left")
         ax.grid(axis="y")
     for ax in axes[-1]:
         ax.set_xlabel("Number of runs")
-    fig.tight_layout()
-    fig.savefig(out / "fig_convergence.pdf")
+    for ax in axes[:, 0]:
+        ax.set_ylabel(FAMILY_LABEL[family] + " (square-root scale)", fontsize=6.3)
+    handles = [plt.Line2D([], [], color=c, linewidth=1.3, marker="o", markersize=2.6,
+                          markeredgecolor=SURFACE) for c in (BLUE, ORANGE, AQUA, TEXT2)]
+    handles.append(plt.Line2D([], [], color=MUTED, linewidth=0.7, alpha=0.55))
+    fig.legend(handles, ["Appliance powers", "Diarist coverage", "Lighting", "Other factor",
+                         f"Below {label_at:.2f} at {N:,} runs"],
+               loc="upper center", ncol=5, bbox_to_anchor=(0.5, 1.0), fontsize=6.3)
+    fig.tight_layout(rect=(0, 0, 1, 0.975))
+    fig.savefig(out / name)
     plt.close(fig)
 
 
@@ -726,7 +764,13 @@ def main(argv=None):
     fig_indices(ind, sur, args.out, tot)
     if ind.imbalance.notna().any():
         fig_adjustment(ind, args.out)
-    fig_convergence(sur, args.out, tot)
+    if tot is not None:
+        fig_convergence(convergence_frame("T", tot=tot), args.out, "T")
+    elif sur is not None:
+        fig_convergence(convergence_frame("Shapley", sur=sur), args.out, "Shapley")
+    for fam in ("S", "OT"):
+        fig_convergence(convergence_frame(fam, ind=ind), args.out, fam,
+                        name=f"fig_convergence_{fam.lower()}.pdf")
     if (r / "profile_bands.npz").is_file():
         fig_profiles(r / "profile_bands.npz", args.out)
     if (r / "hourly.csv").is_file():

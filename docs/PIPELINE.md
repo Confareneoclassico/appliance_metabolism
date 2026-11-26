@@ -622,6 +622,51 @@ only its extract of them, and `run_log*.txt` is ignored by git. Tests:
 `test_gsa_model.py` (the console of Stage 05 on a run with clusters below 50
 household-days).
 
+### 3.19 Checks for the reviewers (November 2026)
+
+Three scripts in `tools/` answer requests of the reviewers that the
+sensitivity analysis does not cover. Each reads the processed folder of a run
+(the canonical run for the paper), runs in minutes on the machine that holds
+the microdata, and writes aggregates only, under the rules of
+`pipeline/disclosure.py`; `tools/collect_exports.py` copies their tables when
+they exist.
+
+`paired_day_types.py` (Reviewer 2, comment 5) compares working and
+non-working days of the same households. A household with at least one
+household-day of each type is paired, its days of one type averaged, and for
+every country with at least 50 paired households it gives the change of the
+coincident peak per household, of the mean daily peak and of the daily energy,
+among all household-days as in Stage 06 and among the paired households, with
+95% intervals from resampling households and Wilcoxon's signed-rank test on
+the paired differences (`Country_DayType_Analysis/paired_daytype_comparison.csv`
+and a figure; `--day-type ddv1` applies the weekday rule to every country).
+
+`driver_robustness.py` (Reviewer 1, comment 5) repeats the tests of Stage 07
+with Cramer's V corrected for bias (Bergsma 2013), a 95% interval from
+resampling households rather than household-days, V on one household-day per
+household, missing answers as a category, and the number of adults within
+each number of diarists (`driver_robustness.csv`). The rows of each solution
+are matched to the household-days by their order and checked against their
+daily energy.
+
+`clustering_robustness.py` (Reviewer 1, comment 3) gives the silhouette width
+and the half-sample stability of Stage 05 for every stratified solution, and
+compares the global K-means partition with a Gaussian mixture, K-means without
+PCA and Ward's clustering on a subsample (`clustering_robustness.csv`).
+
+Run after Stages 01 to 07, with the same HETUS_* settings:
+
+```bash
+python3 tools/paired_day_types.py
+python3 tools/paired_day_types.py --day-type ddv1
+python3 tools/driver_robustness.py --files all
+python3 tools/clustering_robustness.py
+python3 tools/collect_exports.py --out exports_checks
+```
+
+Tests: `test_paired_day_types.py`, `test_driver_robustness.py`,
+`test_clustering_robustness.py`, on synthetic data with known answers.
+
 ## 4. Design choices that constrain interpretation
 
 Person-level attributes come from the first-listed diarist. Stage 03 sets
