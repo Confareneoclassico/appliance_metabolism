@@ -5,6 +5,7 @@ import os
 import warnings
 from paths import RAW_DIR, PROCESSED_DIR, MAPPING_FILE
 from countries import COUNTRIES, CODE
+from age import DESCRIPTION, coding_from_environment, harmonise_inc2
 
 # Variables whose negative codes are recoded below (all but -1 become missing).
 # The labels are descriptive only and follow the variable list of the
@@ -179,7 +180,8 @@ mr_maps = {
     "MR_senior_Watts": hetus_mapped_data.set_index("activity")["MR_senior_Watts"].to_dict()
 }
 
-# Function to get metabolic rate column based on INC2
+# Function to get metabolic rate column based on INC2, in the 15 age groups
+# (age.py maps the completed years of the release of 5 November 2026 to them)
 def get_mr_column(inc2_value):
     if inc2_value == 1: # 10-17 years
         return "MR_teenager_Watts"
@@ -277,6 +279,14 @@ def process_data_in_chunks():
         print(f"Loading data for {country_code}...")
         chunk = pd.read_csv(file_path)
         chunk = harmonise_column_names(chunk, country_code)
+        # Age in the 15 groups of the release of November 2020, whichever
+        # release the file comes from: the release of 5 November 2026 gives
+        # INC2 in completed years (age.py). The metabolic rate below and every
+        # later stage use the groups.
+        if "INC2" in chunk.columns:
+            chunk["INC2"], coding = harmonise_inc2(chunk["INC2"], coding_from_environment(),
+                                                   where=f"{country_code}.csv")
+            print(f"  [age] {country_code}: INC2 in {DESCRIPTION[coding]}")
 
         # Make HID and PID unique by adding country prefix. Whole-column
         # assignment (not .loc) lets the dtype change from int to string,
