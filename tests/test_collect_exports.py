@@ -58,12 +58,14 @@ def test_tagged_stage01_lines_are_extracted(stage_dirs, tmp_path):
     pd.DataFrame({"cluster": [0], "size": [400]}).to_csv(proc / "cluster_summary.csv", index=False)
     log = tmp_path / "run_log.txt"
     log.write_text("Loaded 312000 rows\n"
+                   "  [age] NL: INC2 in the 15 age groups (release of November 2020)\n"
                    "  [secondary 999] NL: 89.90%\n"
                    "  [same-day rule] LU: 1,285 multi-diarist, 20-49 other weekday, 20-49 same weekday\n"
                    "BE_1 1 0.0\n")
     done = run_collector(stage_dirs, tmp_path / "share", log)
     extract = (tmp_path / "share" / "log_extract.txt").read_text().splitlines()
-    assert extract == ["  [secondary 999] NL: 89.90%",
+    assert extract == ["  [age] NL: INC2 in the 15 age groups (release of November 2020)",
+                       "  [secondary 999] NL: 89.90%",
                        "  [same-day rule] LU: 1,285 multi-diarist, 20-49 other weekday, 20-49 same weekday"]
     assert done.returncode == 0
 

@@ -86,11 +86,12 @@ FIGURES = [
     (FIGURES_DIR, "paired_daytype_comparison_ddv1.png"),
 ]
 # Console lines with solution-level figures only, and the tagged lines of
-# Stage 01 (country shares and counts in classes below 50)
+# Stage 01 (country shares, counts in classes below 50 and the coding of age,
+# which names the release of the raw files)
 LOG_PATTERNS = re.compile(
     r"PCA|WCSS|[Oo]ptimal number of clusters|optimal k|[Kk]nee|Silhouette|\bARI\b|"
     r"PERFORMING CLUSTERING ANALYSIS|Number of households: \d|Clustering features|"
-    r"\[same-day rule\]|\[secondary 999\]")
+    r"\[same-day rule\]|\[secondary 999\]|\[age\]")
 
 
 def problems(table, size_cols, profile_test):

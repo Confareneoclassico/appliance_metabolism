@@ -179,7 +179,12 @@ internals are unchanged except for the corrections listed in
 
 The raw HETUS 2010 country microdata are Eurostat Scientific Use Files under
 restricted access and are not included. The run behind the manuscript used the
-release of November 2020. The lookup table from activity to appliance power and
+release of November 2020. The release of 5 November 2026 gives the age of the
+respondent (`INC2`) in completed years instead of in 15 groups; from version
+1.1.0 Stage 01 maps it onto the same groups (`pipeline/age.py`,
+`docs/PIPELINE.md` Section 3.20), so that the pipeline reads either release
+and the change of coding changes no result. Earlier versions read `INC2` as
+groups and must not be run on the release of 5 November 2026. The lookup table from activity to appliance power and
 metabolic rate, `data/HETUS_mapped_data.csv`, is the author's own and is
 included (`docs/PIPELINE.md` Section 0 describes its columns). `docs/PIPELINE.md`
 Section 0 lists the expected file names.

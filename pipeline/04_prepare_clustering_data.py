@@ -1,9 +1,12 @@
 import pandas as pd
 import numpy as np
 from paths import PROCESSED_DIR
+from age import check_groups
 
 # Load the household time series data
 household_timeseries_df = pd.read_csv(PROCESSED_DIR / "household_interval_timeseries.csv")
+# Age enters the tests and the sensitivity analysis in its 15 groups (age.py)
+check_groups(household_timeseries_df["INC2"], "household_interval_timeseries.csv")
 
 # Select relevant categorical variables for clustering
 categorical_cols = [

@@ -12,9 +12,12 @@ The raw HETUS country files (`{COUNTRY_CODE}.csv`, one per country: BE, DE,
 EE, EL, ES, FI, FR, HU, IT, LU, NL, NO, PL, RO, RS, UK) are not included. They
 are restricted-access Eurostat Scientific Use Files and must be obtained
 separately and placed in `data/raw/` (or in the folder given by
-`HETUS_DATA_DIR`) before Stage 01 is run. The run of 14 October 2026 used the
-release of November 2020. From version 1.1.0 Stage 01 stops if one of the files
-is missing; `HETUS_COUNTRIES` (for instance `BE,EE,FR`) restricts a run to
+`HETUS_DATA_DIR`) before Stage 01 is run. The run of 14 October 2026 and the
+canonical run of 20 November 2026 used the release of November 2020. The
+release of 5 November 2026 gives the age of the respondent (`INC2`) in
+completed years instead of in 15 groups: from version 1.1.0 Stage 01 maps it
+onto the groups (Section 3.20), and earlier versions must not be run on it.
+From version 1.1.0 Stage 01 stops if one of the files is missing; `HETUS_COUNTRIES` (for instance `BE,EE,FR`) restricts a run to
 some of the countries, which keep the codes of the full list
 (`pipeline/countries.py`).
 
@@ -689,6 +692,50 @@ Tests: `test_paired_day_types.py`, `test_driver_robustness.py`,
 `test_reviewer_checks.py`, which runs Stages 01 to 07 on synthetic raw files in
 which most households keep a weekday and a weekend diary, then the one command
 as a user runs it, and the stops on an incomplete folder.
+
+### 3.20 Age in completed years in the release of 5 November 2026 (version 1.1.0)
+
+Eurostat's release of 5 November 2026 of the HETUS 2010 scientific use files
+gives the age of the respondent (`INC2`) in completed years, with 10 for ages
+10 to 17 and 80 for 80 and over. Up to the release of November 2020 it was
+recoded into 15 groups: 1 = 10-17, 2 = 18-19, five-year groups from 3 = 20-24
+to 14 = 75-79, and 15 = 80 and over (anonymisation guide, Annex 2). The
+release notes list no other change.
+
+Every stage before this version reads `INC2` as a group. Stages 01 and 02
+select the metabolic rate by group (1 teenager, 2 to 11 adult, 12 to 15
+senior), Stage 04 passes the groups to the tests of Stages 05 to 07, to the
+modal group of the cluster summaries, to the driver figures of Stage 11 and to
+the sensitivity analysis (outputs Y5 and Y6). Run on the new release, that
+code would give the adult rate to diarists aged 10 to 17 and the senior rate
+to every diarist aged 18 or over, would test age with up to 64 categories
+instead of 15, and would give the modal age in single years. The metabolic
+rates of the mapping table are 0.971 (teenager), 1 (adult) and 0.9 (senior)
+times the adult rate for every activity, so only the level of the metabolic
+columns would change, not the dominant activity; the power profiles and the
+clusters would not change.
+
+`pipeline/age.py` maps completed years onto the 15 groups. Stage 01 reads
+the coding of each national file from its values (years if an answer is above
+15, the largest group code), maps years to groups before anything uses them
+and prints the coding in `[age]` lines, which the collector copies into the
+extract of the log; `HETUS_INC2_CODING=groups` or `years` sets the coding
+instead. Values that fit neither coding (group codes mixed with years, 0,
+ages outside 10 to 85, non-integers) stop the run, and Stages 02 and 04 stop
+if a processed file holds values outside the groups, as one written from the
+new release by an earlier Stage 01 would. Negative codes and empty cells are
+left as they are. The groups are a coarsening of the completed years, so the
+two codings of the same ages give the same files: `tests/test_age.py` runs
+Stages 01 to 04 on synthetic records in both codings and compares the files
+byte for byte. A run of Stages 01 to 11 and of `gsa.bundle` on synthetic
+records of five countries in both codings (27 November 2026) gave identical
+processed files, figures, exports and bundle arrays, the same as those of the
+earlier code on the group coding. The earlier code on completed years gave the
+same clusters, but tested age with 63 or 64 categories instead of 15, which
+doubled its Cramér's V on these records (0.09 to 0.21 in the global solution),
+gave modal ages in single years in the cluster summaries and lowered the mean
+daily metabolic total by 6.5%. No output gives age in single years. The outputs of this
+version come from the release of November 2020 and do not change.
 
 ## 4. Design choices that constrain interpretation
 

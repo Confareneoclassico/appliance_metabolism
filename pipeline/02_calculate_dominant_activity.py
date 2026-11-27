@@ -2,12 +2,15 @@ import pandas as pd
 import numpy as np
 from ast import literal_eval
 from paths import PROCESSED_DIR, MAPPING_FILE
+from age import check_groups
 
 # Load intermediate diarist-level metrics
 lu = pd.read_csv(PROCESSED_DIR / "lu_data_at_home_with_diarist_metrics.csv")
 # Ensure series columns are parsed from strings to lists
 for col in ["Diarist_Energy_Demand_Series", "Diarist_Metabolic_Rate_Series"]:
     lu[col] = lu[col].apply(lambda x: literal_eval(x) if isinstance(x, str) else x)
+# The metabolic rate is selected by age group (age.py)
+check_groups(lu["INC2"], "lu_data_at_home_with_diarist_metrics.csv")
 
 # Load mapping for power and MR per activity. The key is the HETUS activity
 # code in column `activity`, as in Stages 01 and 03. Versions up to 1.0.1 used

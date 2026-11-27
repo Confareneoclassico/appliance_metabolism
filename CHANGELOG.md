@@ -8,6 +8,18 @@ Drivers and Robustness"): the corrections of the audit of November 2026, the
 global sensitivity analysis (`gsa/`, `docs/GSA.md`), the checks on the
 microdata for the reviewers (`tools/`) and their aggregate results.
 
+### Added (27 November 2026, release of 5 November 2026 of the microdata)
+
+- `pipeline/age.py`: Eurostat's release of 5 November 2026 gives the age of the respondent
+  (`INC2`) in completed years (10 for 10 to 17, 80 for 80 and over) instead of the 15 groups of
+  the release of November 2020. Stage 01 maps completed years onto the groups, file by file, and
+  prints the coding it found in `[age]` lines, which `tools/collect_exports.py` copies into the
+  extract of the log; Stages 02 and 04 stop if a processed file holds values outside the groups;
+  `HETUS_INC2_CODING` sets the coding. Without the mapping, the code would give the adult
+  metabolic rate to diarists aged 10 to 17 and the senior rate to every diarist aged 18 or over,
+  and would test age with up to 64 categories (`docs/PIPELINE.md` Section 3.20,
+  `tests/test_age.py`). The outputs, from the release of November 2020, do not change.
+
 ### Changed (26 November 2026, release)
 
 - `outputs/` holds the results of version 1.1.0 instead of those of the run of 14 October 2026
